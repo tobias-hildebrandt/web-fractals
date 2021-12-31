@@ -1,3 +1,5 @@
+use std::fmt::Pointer;
+
 use wasm_bindgen::prelude::*;
 
 // When the `wee_alloc` feature is enabled, use `wee_alloc` as the global
@@ -31,6 +33,78 @@ pub fn mandlebrot(real: f64, imaginary: f64, max_iterations: u32) -> JsValue {
         None => return JsValue::NULL,
     }
 }
+
+#[wasm_bindgen]
+pub struct Complex {
+    pub real: f64,
+    pub imag: f64,
+}
+
+#[wasm_bindgen]
+impl Complex {
+    #[wasm_bindgen(constructor)]
+    pub fn new(real: f64, imag: f64) -> Self {
+        return Complex { real, imag };
+    }
+}
+
+// TODO: put image data into an array, pass the pointer to JS
+#[wasm_bindgen]
+pub fn mandlebrot_range(
+    lowest: Complex,
+    highest: Complex,
+    image_width: u32,
+    image_height: u32,
+) -> js_sys::Uint8Array {
+
+    let array = [
+        1,2,3,4,5
+    ];
+
+    unsafe {
+        return js_sys::Uint8Array::view(&array);
+    }
+    
+}
+
+#[wasm_bindgen]
+pub fn uint8array(len: usize) -> js_sys::Uint8Array {
+    let mut array = vec![0; len];
+
+    for i in 0..len {
+        array[i] = i as u8;
+    }
+
+    unsafe {
+        return js_sys::Uint8Array::view(&array);
+    }
+}
+
+#[wasm_bindgen]
+pub struct PointerStruct {
+    v: Vec<u8>
+}
+
+#[wasm_bindgen]
+impl PointerStruct {
+    #[wasm_bindgen(constructor)]
+    pub fn new(len: usize) -> Self {
+        let mut array = vec![0; len];
+    
+        for i in 0..len {
+            array[i] = i as u8;
+        }
+
+        return PointerStruct {
+            v: array
+        };
+    }
+
+    pub fn u8pointer(self) -> *const u8 {
+        return self.v.as_ptr();
+    } 
+}
+
 
 // if the number is in the mandlebrot set, returns None
 // else, returns how many iterations it took for the cycle to leave the set
