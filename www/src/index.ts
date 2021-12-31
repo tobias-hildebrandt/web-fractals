@@ -29,12 +29,12 @@ const CANVAS_SIZE = 1000;
 
 const BATCHES = 100;
 
-let canvas: HTMLCanvasElement = document.getElementById("fractal-canvas") as HTMLCanvasElement;
+const canvas: HTMLCanvasElement = document.getElementById("fractal-canvas") as HTMLCanvasElement;
 canvas.height = CANVAS_SIZE;
 canvas.width = CANVAS_SIZE;
 
-let status: HTMLElement = document.getElementById("status") as HTMLElement;
-let startButton: HTMLButtonElement = document.getElementById("start") as HTMLButtonElement;
+const status: HTMLElement = document.getElementById("status") as HTMLElement;
+const startButton: HTMLButtonElement = document.getElementById("start") as HTMLButtonElement;
 
 let context: CanvasRenderingContext2D;
 let imageData: ImageData;
@@ -42,16 +42,15 @@ let imageData: ImageData;
 let currentPixel: Pixel = new Pixel(0, 0);
 
 function drawDot(pixel: Pixel, iters: number, log: boolean) {
-    let index = (CANVAS_SIZE * pixel.y + pixel.x) * 4;
-    let r, b, g, a;
-    a = 255;
+    const index = (CANVAS_SIZE * pixel.y + pixel.x) * 4;
+    let r, b, g;
     if (iters === null || iters === undefined) {
         r = 255;
         g = 255;
         b = 255;
     } else {
-        let fraction = (iters / inputs.maxIter) * 255;
-        let logr = (Math.log2(iters) / Math.log2(inputs.maxIter)) * 255;
+        // const fraction = (iters / inputs.maxIter) * 255;
+        const logr = (Math.log2(iters) / Math.log2(inputs.maxIter)) * 255;
         r = logr;
         g = 0;
         b = logr;
@@ -68,14 +67,14 @@ function drawDot(pixel: Pixel, iters: number, log: boolean) {
 }
 
 function complexToPixel(complex: Complex): Pixel {
-    let pixelX = Math.floor(((complex.real - inputs.start.real) / (inputs.end.real - inputs.start.real)) * (CANVAS_SIZE));
-    let pixelY = Math.floor(((complex.imag - inputs.start.imag) / (inputs.end.imag - inputs.start.imag)) * (CANVAS_SIZE));
+    const pixelX = Math.floor(((complex.real - inputs.start.real) / (inputs.end.real - inputs.start.real)) * (CANVAS_SIZE));
+    const pixelY = Math.floor(((complex.imag - inputs.start.imag) / (inputs.end.imag - inputs.start.imag)) * (CANVAS_SIZE));
     return new Pixel(pixelX, pixelY);
 }
 
 function pixelToComplex(pixel: Pixel): Complex {
-    let real = ((pixel.x / CANVAS_SIZE) * (inputs.end.real - inputs.start.real)) + inputs.start.real;
-    let imag = ((pixel.y / CANVAS_SIZE) * (inputs.end.imag - inputs.start.imag)) + inputs.start.imag;
+    const real = ((pixel.x / CANVAS_SIZE) * (inputs.end.real - inputs.start.real)) + inputs.start.real;
+    const imag = ((pixel.y / CANVAS_SIZE) * (inputs.end.imag - inputs.start.imag)) + inputs.start.imag;
     return new Complex(real, imag);
 }
 
@@ -86,8 +85,8 @@ function nextPixel(log: boolean): boolean {
         return false;
     }
 
-    let complex = pixelToComplex(currentPixel);
-    let result = fractals.mandlebrot(complex.real, complex.imag, inputs.maxIter);
+    const complex = pixelToComplex(currentPixel);
+    const result = fractals.mandlebrot(complex.real, complex.imag, inputs.maxIter);
     drawDot(currentPixel, result, log);
     
     if (currentPixel.x < CANVAS_SIZE) {
@@ -115,7 +114,7 @@ function nextPixel(log: boolean): boolean {
 function reset() {
     currentPixel = new Pixel(0, 0);
 
-    for (var i = 0; i < imageData.data.length; i++) {
+    for (let i = 0; i < imageData.data.length; i++) {
         imageData.data[i] = 0;
     }
     context.putImageData(imageData, 0, 0);
@@ -132,11 +131,11 @@ function complexToString(complex: Complex) {
 }
 
 function getInput() {
-    let startReal = getInputValue("start-real");
-    let endReal = getInputValue("end-real");
-    let startImag = getInputValue("start-imag");
-    let endImag = getInputValue("end-imag");
-    let maxIter = getInputValue("max-iter");
+    const startReal = getInputValue("start-real");
+    const endReal = getInputValue("end-real");
+    const startImag = getInputValue("start-imag");
+    const endImag = getInputValue("end-imag");
+    const maxIter = getInputValue("max-iter");
 
     if (endReal <= startReal || endImag <= startImag) {
         alert("end value must be greater than start value!");
@@ -164,15 +163,12 @@ function allPixel() {
 
     startButton.disabled = true;
 
-    let pixelsPerBatch = CANVAS_SIZE * CANVAS_SIZE / BATCHES;
-    let pixelsDone = 0;
+    const pixelsPerBatch = CANVAS_SIZE * CANVAS_SIZE / BATCHES;
     let batchesDone = 0;
-    let startTime = performance.now();
+    const startTime = performance.now();
     function doBatch() {
-        for (var i = 0; i < pixelsPerBatch; i++) {
-            if(nextPixel(false)) {
-                pixelsDone++;
-            } else {
+        for (let i = 0; i < pixelsPerBatch; i++) {
+            if(!nextPixel(false)) {
                 break;
             }
         }
@@ -181,11 +177,10 @@ function allPixel() {
             context.putImageData(imageData, 0, 0);
             status.innerText = `${(100 * batchesDone / BATCHES).toFixed(0)}% done`;
             // console.log(`done with ${batchesDone}/${BATCHES}`);
-            pixelsDone = 0;
             
             if (batchesDone == BATCHES) {
-                let endTime = performance.now();
-                let totalSeconds: string = ((endTime-startTime) / 1000).toFixed(2);
+                const endTime = performance.now();
+                const totalSeconds: string = ((endTime-startTime) / 1000).toFixed(2);
                 console.log(`done with all pixels, took ~${totalSeconds} seconds`);
                 status.innerText = `done :) took ~${totalSeconds} seconds`;
                 startButton.disabled = false;
@@ -202,30 +197,30 @@ function allPixel() {
 const TEST_NUM = 200_000_000;
 
 function testU8Array() {
-    let startTime = performance.now();
+    const startTime = performance.now();
 
-    let arr = fractals.uint8array(TEST_NUM);
+    const arr = fractals.uint8array(TEST_NUM);
     let total = 0;
-    for (let val of arr) {
+    for (const val of arr) {
         total += val;
     }
 
-    let endTime = performance.now();
+    const endTime = performance.now();
     console.log(`t${total} uint8array took ${endTime - startTime} ms`);
 }
 
 // pointer is slightly faster
 function testPtr() {
-    let startTime = performance.now();
+    const startTime = performance.now();
 
-    let ps = new fractals.PointerStruct(TEST_NUM);
+    const ps = new fractals.PointerStruct(TEST_NUM);
     const arr = new Uint8Array(memory.buffer, ps.u8pointer(), TEST_NUM);
     let total = 0;
-    for (let val of arr) {
+    for (const val of arr) {
         total += val;
     }
 
-    let endTime = performance.now();
+    const endTime = performance.now();
 
     console.log(`t${total} pointer took ${endTime - startTime} ms`);
 }

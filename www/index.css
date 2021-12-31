@@ -2,13 +2,18 @@ body {
     position: absolute;
     top: 0;
     left: 0;
-    width: 90%;
-    height: 90%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     background-color: darkgray;
+    height: 99%;
+    width: 99%;
+}
+
+canvas {
+    display: flex;
+    max-width: 100%;
 }
 input {
     max-width: 50px;
