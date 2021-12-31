@@ -1,4 +1,4 @@
-use std::fmt::Pointer;
+use std::fmt::{Display};
 
 use wasm_bindgen::prelude::*;
 
@@ -40,11 +40,22 @@ pub struct Complex {
     pub imag: f64,
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class="Complex")]
 impl Complex {
     #[wasm_bindgen(constructor)]
     pub fn new(real: f64, imag: f64) -> Self {
         return Complex { real, imag };
+    }
+
+    #[wasm_bindgen(js_name="toString")]
+    pub fn to_string(&self) -> String {
+        return format!("{}", self).into();
+    }
+}
+
+impl Display for Complex {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        return write!(f, "{} + {}i", self.real, self.imag);
     }
 }
 

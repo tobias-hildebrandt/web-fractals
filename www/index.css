@@ -1,0 +1,18 @@
+body {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 90%;
+    height: 90%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: darkgray;
+}
+input {
+    max-width: 50px;
+}
+.spacer {
+    width: 25px;
+}

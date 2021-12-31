@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <title>fractals</title>
+  <link rel="stylesheet" type="text/css" href="./index.css" />
+</head>
+
+<body>
+  <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
+  <div id="status">loading...</div>
+  <table>
+    <tr>
+      <td>
+        <label for="start-real">Start Real</label>
+      </td>
+      <td>
+        <input type="number" id="start-real" name="start-real" min="=-2.5" max="2.5" value="-2.5" step="0.05">
+      </td>
+      <td>
+        <div class="spacer"></div>
+      </td>
+      <td>
+        <label for="end-real">End Real</label>
+      </td>
+      <td>
+        <input type="number" id="end-real" name="end-real" min="=-2.5" max="2.5" value="2.5" step="0.05">
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <label for="start-imag">Start Imaginary</label>
+      </td>
+      <td>
+        <input type="number" id="start-imag" name="start-imag" min="=-2.5" max="2.5" value="-2.5" step="0.05">
+      </td>
+      <td>
+        <div class="spacer"></div>
+      </td>
+      <td>
+        <label for="end-imag">End Imaginary</label>
+      </td>
+      <td>
+        <input type="number" id="end-imag" name="end-imag" min="=-2.5" max="2.5" value="2.5" step="0.05">
+      </td>
+    </tr>
+  </table>
+  <table>
+    <tr>
+      <td>
+        <label for="max-iter">Max Iterations</label>
+      </td>
+      <td>
+        <input type="number" id="max-iter" name="max-iter" min="0" max="5000" value="500" step="100">
+      </td>
+    </tr>
+  </table>
+  <button id="start">M A N D L E B R O T</button>
+  <canvas id="fractal-canvas"></canvas>
+  <script src="./bundle.js"></script>
+</body>
+
+</html>
