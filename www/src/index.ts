@@ -38,7 +38,6 @@ const startButton: HTMLButtonElement = document.getElementById("start") as HTMLB
 let context: CanvasRenderingContext2D;
 let imageData: ImageData;
 
-let currentWorkPixel: Pixel = new Pixel(0, 0);
 let canvasClickDown: Pixel;
 let canvasClickUp: Pixel;
 let clickDown = false;
@@ -62,35 +61,6 @@ function setCanvasSizes(height: number, width: number) {
     updateRatios();
 }
 
-function drawDot(pixel: Pixel, iters: number, shouldDraw: boolean, maxIter: number, lowestIter: number) {
-    const index = (canvasWidth * pixel.y + pixel.x) * 4;
-    let r, b, g;
-    if (iters === null || iters === undefined) {
-        r = 255;
-        g = 255;
-        b = 255;
-    } else {
-        // const fraction = (iters / inputs.maxIter) * 255;
-        const color = Math.floor((Math.log2(iters - lowestIter + 1) / Math.log2(maxIter)) * 255);
-        r = color;
-        g = 0;
-        b = color / 2;
-
-        if (pixel.x == 0 && pixel.y % 500 == 0) {
-            console.log(`pixel: ${pixel}, iters:${iters}, maxIter:${maxIter}, lowestIter:${lowestIter}, color: ${color}`);
-        }
-    }
-
-    imageData.data[index + 0] = r;
-    imageData.data[index + 1] = g;
-    imageData.data[index + 2] = b;
-    imageData.data[index + 3] = 255;
-
-    if (shouldDraw) {
-        context.putImageData(imageData, 0, 0);
-    }
-}
-
 function complexToPixel(complex: Complex, inputs: Inputs): Pixel {
     const pixelX = Math.floor(((complex.real - inputs.start.real) / (inputs.end.real - inputs.start.real)) * (inputs.width));
 
@@ -107,57 +77,7 @@ function pixelToComplex(pixel: Pixel, inputs: Inputs): Complex {
     return new Complex(real, imag);
 }
 
-// returns whether or not there is another pixel left
-function doWorkNextPixel(shouldLog: boolean, inputs: Inputs, secondRound: boolean, lowestIter: number): boolean {
-    if (currentWorkPixel === null) {
-        console.log("no more pixels");
-        return false;
-    }
-
-    const complex = pixelToComplex(currentWorkPixel, inputs);
-    let result: number;
-    if (!secondRound) {
-        // first round
-        result = fractals.mandlebrot(complex.real, complex.imag, inputs.maxIterations);
-
-        results[currentWorkPixel.x + currentWorkPixel.y * inputs.width] = result;
-
-        if (result !== null && (lowestIter === null || lowestIter === undefined || result < lowestIter)) {
-            lowestIter = result;
-        }
-        drawDot(currentWorkPixel, result, shouldLog, inputs.maxIterations, 0);
-    } else {
-        // second round
-        result = results[currentWorkPixel.x + currentWorkPixel.y * inputs.width];
-        drawDot(currentWorkPixel, result, shouldLog, inputs.maxIterations, lowestIter);
-    }
-
-
-    if (currentWorkPixel.x < inputs.width) {
-        currentWorkPixel.x += 1;
-    } else {
-        if (currentWorkPixel.y < inputs.height) {
-            currentWorkPixel.y += 1;
-            currentWorkPixel.x = 0;
-        } else {
-            currentWorkPixel.x = null;
-            currentWorkPixel.y = null;
-            context.putImageData(imageData, 0, 0);
-            return false;
-        }
-    }
-
-    if (shouldLog) {
-        console.log(`mandlebrot at pixel (${currentWorkPixel.x}, ${currentWorkPixel.y}): \
-        ${complex.real.toFixed(2)} + ${complex.imag.toFixed(2)}i, ${result !== null ? "not member" : "member"}`);
-    }
-
-    return true;
-}
-
 function reset() {
-    currentWorkPixel = new Pixel(0, 0);
-
     context.clearRect(0, 0, canvasWidth, canvasHeight);
 
     status.innerText = `not started`;
@@ -220,123 +140,123 @@ async function useWasmAllPixels() {
 
     const totalPixels = inputs.height * inputs.width;
     // const pixelsPerBatch = 25000;
-    const pixelsPerBatch = Math.max(totalPixels / 1000, 25000);
+    // const NUM_WORKERS = 
+    const pixelsPerBatch = Math.max(totalPixels / 10, 25000);
+    const NUM_WORKERS = totalPixels / pixelsPerBatch;
+    // const NUM_WORKERS = 5;
     results = new Int32Array(inputs.height * inputs.width);
     let lowestIter: number;
+    let workersDone = 0;
+    const workers: Worker[] = [];
 
-    async function doBatch(secondRound: boolean, pixelsDone: number) {
-        if (!secondRound) {
-            const inputsClone = inputs.cloned();
-            // console.log(`BEFORE RENDER: imageData null? ${imageData.data === null}, results null? ${results === null}, ` +
-            // `inputs: ${argsToString(inputsClone)}, pixelsDone: ${pixelsDone}, pixelsPerBatch: ${pixelsPerBatch}`);
-            const maybeLowest = await fractals.render_mandlebrot(imageData.data, results, inputsClone, pixelsDone, pixelsPerBatch);
+    let currentPass = 1;
 
-            if (lowestIter === null || lowestIter === undefined || maybeLowest < lowestIter) {
-                lowestIter = maybeLowest;
-            }
-        } else {
-            fractals.second_round(imageData.data, results, inputs, pixelsDone, pixelsPerBatch, lowestIter);
+    status.innerText = `pass #${currentPass}, ${workersDone} of ${NUM_WORKERS} workers done (${(100 * workersDone / NUM_WORKERS).toFixed(2)}%)`;
+
+    // TODO: cleanup this mess 
+    for (let id = 0; id < NUM_WORKERS; id++) {
+        const worker = new Worker(new URL('./worker.ts', import.meta.url));
+
+        worker.onerror = (message) => {
+            console.log(`worker ${id} had an error: ${message}`);
         }
 
-        pixelsDone += pixelsPerBatch;
+        // when main thread receives a message
+        worker.onmessage = (message) => {
+            const workerId = message.data[0];
+            const startingPixel = pixelsPerBatch * workerId;
+            const pass = message.data[1];
+            const workerImage: Uint8ClampedArray = message.data[2];
 
-        context.putImageData(imageData, 0, 0);
-        status.innerText = `${!secondRound ? "first round" : "second round"}: ${(100 * pixelsDone / totalPixels).toFixed(0)}% done`;
+            // only on 1st pass
+            if (pass == 1) {
+                const workerResults: Int32Array = message.data[3];
 
-        // console.log(`${!secondRound ? "first round" : "second round"}, finished pixels: ${pixelsDone}`);
+                // copy worker results
+                for (let j = 0; j < pixelsPerBatch; j++) {
+                    results[startingPixel + j] = workerResults[j];
+                }
 
-        if (pixelsDone < totalPixels) {
-            // still have more batches to do
-            // allow for other asyncs to trigger
-            // then recurse
-            setTimeout(async () => { doBatch(secondRound, pixelsDone) }, 0);
-        } else {
-            // done, do not recurse any more
-            if (secondRound) {
-                const endTime = performance.now();
-                const totalSeconds: string = ((endTime - startTime) / 1000).toFixed(2);
-                console.log(`done with all pixels, took ~${totalSeconds} seconds`);
-                status.innerText = `done with WASM :) took ~${totalSeconds} seconds`;
-                startButton.disabled = false;
-                context.putImageData(imageData, 0, 0);
-                return;
-            } else {
-                // do the second round
-                pixelsDone = 0;
-                console.log(`starting second round: lowest iter = ${lowestIter}`);
-                setTimeout(async () => { doBatch(true, 0) }, 0);
-                return false;
+                // handle min
+                const min = message.data[4];
+                if (lowestIter === null || lowestIter === undefined || min < lowestIter) {
+                    lowestIter = min;
+                }
             }
-        }
+
+            // on all passes
+            // copy worker pixels
+            for (let j = 0; j < pixelsPerBatch * 4; j++) {
+                imageData.data[startingPixel * 4 + j] = workerImage[j];
+                // if (j % pixelsPerBatch == 0) {
+                //     console.log(`on byte ${j} of worker ${workerId}, value is ${workerImage[j]}`);
+                // }
+            }
+
+            // draw the incomplete image
+            context.putImageData(imageData, 0, 0);
+
+            workersDone += 1;
+
+            status.innerText = `pass #${currentPass}, ${workersDone} of ${NUM_WORKERS} workers done (${(100 * workersDone / NUM_WORKERS).toFixed(2)}%)`;
+
+            if (workersDone == NUM_WORKERS) {
+                if (pass === 2) {
+                    // finished second pass
+                    const endTime = performance.now();
+                    // console.log(imageData.data);
+                    const totalSeconds: string = ((endTime - startTime) / 1000).toFixed(2);
+                    console.log(`done with all pixels, took ~${totalSeconds} seconds`);
+                    console.log(`min = ${lowestIter}`);
+                    status.innerText = `done with WASM :) took ~${totalSeconds} seconds`;
+                    startButton.disabled = false;
+                    context.putImageData(imageData, 0, 0);
+
+                    for (let j = 0; j < NUM_WORKERS; j++) {
+                        const worker: Worker = workers[j];
+                        worker.terminate();
+                    }
+                    return;
+                } else {
+                    // finished first pass
+                    console.log(`done with first pass, switching to second`);
+                    console.log(`min = ${lowestIter}`);
+                    for (let j = 0; j < NUM_WORKERS; j++) {
+                        const worker: Worker = workers[j];
+                        const tempImage: Uint8ClampedArray = new Uint8ClampedArray(pixelsPerBatch * 4);
+                        const tempResults: Int32Array = new Int32Array(pixelsPerBatch);
+                        const secondRoundStartingPixel = j * pixelsPerBatch;
+
+                        // copy results
+                        for (let k = 0; k < pixelsPerBatch; k++) {
+                            tempResults[k] = results[secondRoundStartingPixel + k];
+                        }
+
+                        // copy pixels
+                        for (let k = 0; k < pixelsPerBatch * 4; k++) {
+                            tempImage[k] = imageData.data[secondRoundStartingPixel * 4 + k];
+                        }
+
+                        worker.postMessage([j, 2, JSON.stringify(inputs), pixelsPerBatch, lowestIter, tempImage, tempResults]); // second pass
+                    }
+                    workersDone = 0;
+                    currentPass = 2;
+
+                    status.innerText = `pass #${currentPass}, ${workersDone} of ${NUM_WORKERS} workers done (${(100 * workersDone / NUM_WORKERS).toFixed(2)}%)`;
+                }
+            }
+
+        };
+
+        // console.log(`main thread sees worker ${id} init done!`);
+        workers.push(worker);
     }
+    for (let id = 0; id < NUM_WORKERS; id++) {
+        const worker: Worker = workers[id];
 
-    await doBatch(false, 0);
-}
-
-function allPixel() {
-    reset();
-
-    const inputs = getInputs();
-
-    if (inputs === null) {
-        return;
+        worker.postMessage([id, 1, JSON.stringify(inputs), pixelsPerBatch]);
+        // console.log(`main thread posted message to worker #${id}`);
     }
-
-    oldInputs = inputs;
-    const lowestIter = inputs.maxIterations;
-
-    results = new Int32Array(inputs.height * inputs.width);
-
-    console.log(`start: ${complexToString(inputs.start)}, end: ${complexToString(inputs.end)}, iters: ${inputs.maxIterations}`);
-    console.log(`inputs: ${JSON.stringify(inputs)}`);
-
-    startButton.disabled = true;
-
-    setCanvasSizes(inputs.height, inputs.width);
-
-    const totalPixels = inputs.height * inputs.width;
-    const pixelsPerBatch = 25000;//Math.max(totalPixels / 1000, 10000);
-    const startTime = performance.now();
-    function doBatch(secondRound: boolean, pixelsDone: number) {
-        for (let i = 0; i < pixelsPerBatch; i++) {
-            pixelsDone += 1;
-            if (!doWorkNextPixel(false, inputs, secondRound, lowestIter)) {
-                break;
-            }
-        }
-
-
-        context.putImageData(imageData, 0, 0);
-        status.innerText = `${!secondRound ? "first round" : "second round"}: ${(100 * pixelsDone / totalPixels).toFixed(0)}% done`;
-
-        // console.log(`${!secondRound ? "first round" : "second round"}, finished batch ${batchesDone}`);
-
-        if (pixelsDone <= totalPixels) {
-            // still have more batches to do
-            // allow for other asyncs to trigger
-            // then recurse
-            setTimeout(() => { doBatch(secondRound, pixelsDone) }, 0);
-        } else {
-            // done, do not recurse any more
-            if (secondRound) {
-                const endTime = performance.now();
-                const totalSeconds: string = ((endTime - startTime) / 1000).toFixed(2);
-                console.log(`done with all pixels, took ~${totalSeconds} seconds`);
-                status.innerText = `done :) took ~${totalSeconds} seconds`;
-                startButton.disabled = false;
-                return false;
-            } else {
-                // do the second round
-                pixelsDone = 0;
-                currentWorkPixel = new Pixel(0, 0);
-                console.log(`starting second round: lowest iter = ${lowestIter}`);
-                setTimeout(() => { doBatch(true, 0) }, 0);
-                return false;
-            }
-        }
-    }
-
-    doBatch(false, 0);
 }
 
 function clearDragCanvas() {
@@ -344,7 +264,7 @@ function clearDragCanvas() {
 }
 
 function updateRatios() {
-    
+
     const inputs = getInputs();
     const areaRatioElem = document.getElementById("area-ratio");
     const canvasRatioElem = document.getElementById("canvas-ratio");
@@ -362,7 +282,7 @@ function updateRatios() {
     } else {
         canvasRatioElem.innerText = `${canvasRatio.toFixed(2)}`;
     }
-    
+
 }
 
 function setUpUpdateRatioEvents() {
@@ -386,7 +306,19 @@ function main() {
     reset();
 }
 
-startButton.onclick = (async () => await useWasmAllPixels());
+function testWorkers() {
+    const worker = new Worker(new URL('./testworker.ts', import.meta.url));
+    worker.postMessage("hello");
+
+    worker.onmessage = (message: MessageEvent<string>) => {
+        console.log(`main sees message: ${message.data}`);
+    }
+}
+
+startButton.onclick = () => {
+    testWorkers();
+    useWasmAllPixels();
+}
 
 // click the button whenever enter is pressed inside the form
 document.getElementById("inputs").addEventListener("keyup", function (event) {
@@ -482,7 +414,7 @@ dragCanvas.addEventListener("mousemove", function (event) {
 
         // TODO: fix or scrap this
         const width = newX - canvasClickDown.x, height = newY - canvasClickDown.y;
-        
+
         if (newY < canvasClickDown.y) {
             // above start
             if (newX < canvasClickDown.x) {
@@ -502,7 +434,7 @@ dragCanvas.addEventListener("mousemove", function (event) {
             }
         }
 
-        
+
         context.strokeRect(canvasClickDown.x, canvasClickDown.y, width, height);
 
         if (oldInputs === undefined || oldInputs === null) {

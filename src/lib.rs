@@ -60,7 +60,7 @@ impl Display for Pixel {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(inspectable)]
 #[derive(Clone, Copy)]
 pub struct Complex {
     pub real: f64,
@@ -161,8 +161,8 @@ pub fn check_in_mandlebrot(real: f64, imaginary: f64, max_iterations: u32) -> Op
     }
 }
 
-#[wasm_bindgen]
 #[derive(Clone)]
+#[wasm_bindgen(inspectable)]
 pub struct MandlebrotArgs {
     pub start: Complex,
     pub end: Complex,
@@ -174,7 +174,7 @@ pub struct MandlebrotArgs {
     pub keep_ratio: bool,
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(inspectable)]
 impl MandlebrotArgs {
     #[wasm_bindgen(constructor)]
     pub fn new(
@@ -196,7 +196,7 @@ impl MandlebrotArgs {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(inspectable)]
 impl MandlebrotArgs {
     #[wasm_bindgen(method)]
     pub fn cloned(&self) -> Self {
@@ -206,7 +206,7 @@ impl MandlebrotArgs {
 
 // returns lowest number of iterations needed
 #[wasm_bindgen]
-pub async fn render_mandlebrot(
+pub fn render_mandlebrot(
     image_data: js_sys::Uint8ClampedArray,
     results: js_sys::Int32Array,
     args: MandlebrotArgs,
@@ -248,14 +248,14 @@ pub async fn render_mandlebrot(
                 }
 
                 let signed = unsigned as i32;
-                results.set_index(start_index + count, signed);
+                results.set_index( count, signed);
             }
             None => {
-                results.set_index(start_index + count, -1i32);
+                results.set_index(count, -1i32);
             }
         }
 
-        draw_pixel(&pixel, result, &args, &image_data);
+        draw_pixel(&pixel, result, &args, &image_data, start_index);
 
         if count >= amount {
             // log!("done after {}, count is {}", pixel, count);
@@ -284,17 +284,14 @@ pub fn second_round(
 
     loop {
         let result: Option<u32>;
-        let current = results.get_index(start_index + count);
+        let current = results.get_index(count);
 
         // normalize for lowest
         if current > 0 && lowest > 0 {
             let current_u = current as u32;
             result = Some(current_u - lowest + 1);
-            draw_pixel(&pixel, result, &args, &image_data);
+            draw_pixel(&pixel, result, &args, &image_data, start_index);
         }
-
-        // TODO: check neighbors?
-
         
         if count >= amount {
             // log!("done after {}, count is {}", pixel, count);
@@ -312,8 +309,9 @@ fn draw_pixel(
     iters_opt: Option<u32>,
     args: &MandlebrotArgs,
     arr: &js_sys::Uint8ClampedArray,
+    start_index: u32
 ) {
-    let index = ((args.width * pixel.y) + pixel.x) * 4;
+    let index = ((args.width * pixel.y) + pixel.x - start_index) * 4;
     let (r, g, b): (u8, u8, u8);
     if let Some(iters) = iters_opt {
         let color = (f64::log2(iters as f64 * 1.2f64) / f64::log2(args.max_iterations as f64) * 255.0)
