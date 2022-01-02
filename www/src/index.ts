@@ -20,7 +20,7 @@ class Pixel {
 interface Inputs {
     start: Complex;
     end: Complex;
-    maxIter: number;
+    maxIterations: number;
     width: number;
     height: number;
     keepRatio: boolean;
@@ -44,8 +44,7 @@ let canvasClickUp: Pixel;
 let clickDown = false;
 
 let oldInputs: Inputs;
-let lowestIter: number;
-let results: Array<number>;
+let results: Int32Array;
 
 function setCanvasSizes(height: number, width: number) {
     canvasHeight = height;
@@ -109,7 +108,7 @@ function pixelToComplex(pixel: Pixel, inputs: Inputs): Complex {
 }
 
 // returns whether or not there is another pixel left
-function doWorkNextPixel(shouldLog: boolean, inputs: Inputs, secondRound: boolean): boolean {
+function doWorkNextPixel(shouldLog: boolean, inputs: Inputs, secondRound: boolean, lowestIter: number): boolean {
     if (currentWorkPixel === null) {
         console.log("no more pixels");
         return false;
@@ -119,18 +118,18 @@ function doWorkNextPixel(shouldLog: boolean, inputs: Inputs, secondRound: boolea
     let result: number;
     if (!secondRound) {
         // first round
-        result = fractals.mandlebrot(complex.real, complex.imag, inputs.maxIter);
+        result = fractals.mandlebrot(complex.real, complex.imag, inputs.maxIterations);
 
         results[currentWorkPixel.x + currentWorkPixel.y * inputs.width] = result;
 
-        if (result !== null && result < lowestIter) {
+        if (result !== null && (lowestIter === null || lowestIter === undefined || result < lowestIter)) {
             lowestIter = result;
         }
-        drawDot(currentWorkPixel, result, shouldLog, inputs.maxIter, 0);
+        drawDot(currentWorkPixel, result, shouldLog, inputs.maxIterations, 0);
     } else {
         // second round
         result = results[currentWorkPixel.x + currentWorkPixel.y * inputs.width];
-        drawDot(currentWorkPixel, result, shouldLog, inputs.maxIter, lowestIter);
+        drawDot(currentWorkPixel, result, shouldLog, inputs.maxIterations, lowestIter);
     }
 
 
@@ -173,12 +172,12 @@ function complexToString(complex: Complex) {
     return `(${complex.real} + ${complex.imag}i)`;
 }
 
-function getInputs(): Inputs {
+function getInputs(): fractals.MandlebrotArgs {
     const startReal = getInputValue("start-real");
     const endReal = getInputValue("end-real");
     const startImag = getInputValue("start-imag");
     const endImag = getInputValue("end-imag");
-    const maxIter = getInputValue("max-iter");
+    const maxIterations = getInputValue("max-iter");
     const width = getInputValue("canvas-width");
     const height = getInputValue("canvas-height");
     const keepRatio = (document.getElementById("keep-ratio") as HTMLInputElement).checked;
@@ -188,15 +187,83 @@ function getInputs(): Inputs {
         return null;
     }
 
-    return {
-        start: new Complex(startReal, startImag),
-        end: new Complex(endReal, endImag),
-        maxIter: maxIter,
-        width: width,
-        height: height,
-        keepRatio: keepRatio,
-    };
+    return new fractals.MandlebrotArgs(
+        new Complex(startReal, startImag),
+        new Complex(endReal, endImag),
+        width,
+        height,
+        maxIterations,
+        keepRatio,
+    );
 
+}
+
+function useWasmAllPixels() {
+    reset();
+
+    const inputs = getInputs();
+
+    if (inputs === null) {
+        return;
+    }
+
+    oldInputs = inputs;
+
+    startButton.disabled = true;
+    setCanvasSizes(inputs.height, inputs.width);
+
+    const startTime = performance.now();
+
+    const totalPixels = inputs.height * inputs.width;
+    // const pixelsPerBatch = 25000;
+    const pixelsPerBatch = Math.max(totalPixels / 1000, 25000);
+    results = new Int32Array(inputs.height * inputs.width);
+    let lowestIter: number;
+
+    function doBatch(secondRound: boolean, pixelsDone: number) {
+        if (!secondRound) {
+            const maybeLowest = fractals.render_mandlebrot(imageData.data, results, inputs, pixelsDone, pixelsPerBatch);
+
+            if (lowestIter === null || lowestIter === undefined || maybeLowest < lowestIter) {
+                lowestIter = maybeLowest;
+            }
+        } else {
+            fractals.second_round(imageData.data, results, inputs, pixelsDone, pixelsPerBatch, lowestIter);
+        }
+
+        pixelsDone += pixelsPerBatch;
+
+        context.putImageData(imageData, 0, 0);
+        status.innerText = `${!secondRound ? "first round" : "second round"}: ${(100 * pixelsDone / totalPixels).toFixed(0)}% done`;
+
+        // console.log(`${!secondRound ? "first round" : "second round"}, finished pixels: ${pixelsDone}`);
+
+        if (pixelsDone < totalPixels) {
+            // still have more batches to do
+            // allow for other asyncs to trigger
+            // then recurse
+            setTimeout(() => { doBatch(secondRound, pixelsDone) }, 0);
+        } else {
+            // done, do not recurse any more
+            if (secondRound) {
+                const endTime = performance.now();
+                const totalSeconds: string = ((endTime - startTime) / 1000).toFixed(2);
+                console.log(`done with all pixels, took ~${totalSeconds} seconds`);
+                status.innerText = `done with WASM :) took ~${totalSeconds} seconds`;
+                startButton.disabled = false;
+                context.putImageData(imageData, 0, 0);
+                return;
+            } else {
+                // do the second round
+                pixelsDone = 0;
+                console.log(`starting second round: lowest iter = ${lowestIter}`);
+                setTimeout(() => { doBatch(true, 0) }, 0);
+                return false;
+            }
+        }
+    }
+
+    doBatch(false, 0);
 }
 
 function allPixel() {
@@ -209,11 +276,11 @@ function allPixel() {
     }
 
     oldInputs = inputs;
-    lowestIter = inputs.maxIter;
+    const lowestIter = inputs.maxIterations;
 
-    results = Array.of(inputs.height * inputs.width);
+    results = new Int32Array(inputs.height * inputs.width);
 
-    console.log(`start: ${complexToString(inputs.start)}, end: ${complexToString(inputs.end)}, iters: ${inputs.maxIter}`);
+    console.log(`start: ${complexToString(inputs.start)}, end: ${complexToString(inputs.end)}, iters: ${inputs.maxIterations}`);
     console.log(`inputs: ${JSON.stringify(inputs)}`);
 
     startButton.disabled = true;
@@ -226,7 +293,7 @@ function allPixel() {
     function doBatch(secondRound: boolean, pixelsDone: number) {
         for (let i = 0; i < pixelsPerBatch; i++) {
             pixelsDone += 1;
-            if (!doWorkNextPixel(false, inputs, secondRound)) {
+            if (!doWorkNextPixel(false, inputs, secondRound, lowestIter)) {
                 break;
             }
         }
@@ -288,16 +355,25 @@ function clearDragCanvas() {
 }
 
 function updateRatios() {
+    
     const inputs = getInputs();
     const areaRatioElem = document.getElementById("area-ratio");
     const canvasRatioElem = document.getElementById("canvas-ratio");
 
     // x / y
     const areaRatio = (inputs.end.real - inputs.start.real) / (inputs.end.imag - inputs.start.imag);
+    if (!Number.isFinite(areaRatio)) {
+        areaRatioElem.innerText = "invalid";
+    }
     areaRatioElem.innerText = `${areaRatio.toFixed(2)}`;
 
     const canvasRatio = inputs.width / inputs.height;
-    canvasRatioElem.innerText = `${canvasRatio.toFixed(2)}`;
+    if (!Number.isFinite(canvasRatio)) {
+        canvasRatioElem.innerText = "invalid";
+    } else {
+        canvasRatioElem.innerText = `${canvasRatio.toFixed(2)}`;
+    }
+    
 }
 
 function setUpUpdateRatioEvents() {
@@ -321,7 +397,7 @@ function main() {
     reset();
 }
 
-startButton.onclick = allPixel;
+startButton.onclick = useWasmAllPixels; // allPixel()
 
 // click the button whenever enter is pressed inside the form
 document.getElementById("inputs").addEventListener("keyup", function (event) {
@@ -438,9 +514,6 @@ dragCanvas.addEventListener("mousemove", function (event) {
         }
 
         
-
-
-
         context.strokeRect(canvasClickDown.x, canvasClickDown.y, width, height);
 
         if (oldInputs === undefined || oldInputs === null) {
@@ -448,9 +521,10 @@ dragCanvas.addEventListener("mousemove", function (event) {
         }
 
         const down = pixelToComplex(new Pixel(canvasClickDown.x, canvasClickDown.y), oldInputs);
-        const current = pixelToComplex(new Pixel(event.offsetX, newY), oldInputs);
+        const current = pixelToComplex(new Pixel(newX, newY), oldInputs);
 
         if (down.real == current.real || down.imag == current.imag) {
+            console.log("not adjusting, width/length of 0");
             return;
         }
 
