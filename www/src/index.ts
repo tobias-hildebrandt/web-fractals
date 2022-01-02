@@ -172,6 +172,10 @@ function complexToString(complex: Complex) {
     return `(${complex.real} + ${complex.imag}i)`;
 }
 
+function argsToString(args: fractals.MandlebrotArgs) {
+    return `start: ${args.start} end: ${args.end} size: ${args.width} x ${args.height}, maxIterations: ${args.maxIterations}, keepRatio: ${args.keepRatio}`;
+}
+
 function getInputs(): fractals.MandlebrotArgs {
     const startReal = getInputValue("start-real");
     const endReal = getInputValue("end-real");
@@ -198,7 +202,7 @@ function getInputs(): fractals.MandlebrotArgs {
 
 }
 
-function useWasmAllPixels() {
+async function useWasmAllPixels() {
     reset();
 
     const inputs = getInputs();
@@ -220,9 +224,12 @@ function useWasmAllPixels() {
     results = new Int32Array(inputs.height * inputs.width);
     let lowestIter: number;
 
-    function doBatch(secondRound: boolean, pixelsDone: number) {
+    async function doBatch(secondRound: boolean, pixelsDone: number) {
         if (!secondRound) {
-            const maybeLowest = fractals.render_mandlebrot(imageData.data, results, inputs, pixelsDone, pixelsPerBatch);
+            const inputsClone = inputs.cloned();
+            // console.log(`BEFORE RENDER: imageData null? ${imageData.data === null}, results null? ${results === null}, ` +
+            // `inputs: ${argsToString(inputsClone)}, pixelsDone: ${pixelsDone}, pixelsPerBatch: ${pixelsPerBatch}`);
+            const maybeLowest = await fractals.render_mandlebrot(imageData.data, results, inputsClone, pixelsDone, pixelsPerBatch);
 
             if (lowestIter === null || lowestIter === undefined || maybeLowest < lowestIter) {
                 lowestIter = maybeLowest;
@@ -242,7 +249,7 @@ function useWasmAllPixels() {
             // still have more batches to do
             // allow for other asyncs to trigger
             // then recurse
-            setTimeout(() => { doBatch(secondRound, pixelsDone) }, 0);
+            setTimeout(async () => { doBatch(secondRound, pixelsDone) }, 0);
         } else {
             // done, do not recurse any more
             if (secondRound) {
@@ -257,13 +264,13 @@ function useWasmAllPixels() {
                 // do the second round
                 pixelsDone = 0;
                 console.log(`starting second round: lowest iter = ${lowestIter}`);
-                setTimeout(() => { doBatch(true, 0) }, 0);
+                setTimeout(async () => { doBatch(true, 0) }, 0);
                 return false;
             }
         }
     }
 
-    doBatch(false, 0);
+    await doBatch(false, 0);
 }
 
 function allPixel() {
@@ -332,24 +339,6 @@ function allPixel() {
     doBatch(false, 0);
 }
 
-const TEST_NUM = 200_000_000;
-
-// pointer is slightly faster
-function testPtr() {
-    const startTime = performance.now();
-
-    const ps = new fractals.PointerStruct(TEST_NUM);
-    const arr = new Uint8Array(memory.buffer, ps.u8pointer(), TEST_NUM);
-    let total = 0;
-    for (const val of arr) {
-        total += val;
-    }
-
-    const endTime = performance.now();
-
-    console.log(`t${total} pointer took ${endTime - startTime} ms`);
-}
-
 function clearDragCanvas() {
     dragCanvas.getContext("2d").clearRect(0, 0, canvasWidth, canvasHeight);
 }
@@ -397,7 +386,7 @@ function main() {
     reset();
 }
 
-startButton.onclick = useWasmAllPixels; // allPixel()
+startButton.onclick = (async () => await useWasmAllPixels());
 
 // click the button whenever enter is pressed inside the form
 document.getElementById("inputs").addEventListener("keyup", function (event) {

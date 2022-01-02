@@ -162,6 +162,7 @@ pub fn check_in_mandlebrot(real: f64, imaginary: f64, max_iterations: u32) -> Op
 }
 
 #[wasm_bindgen]
+#[derive(Clone)]
 pub struct MandlebrotArgs {
     pub start: Complex,
     pub end: Complex,
@@ -195,12 +196,20 @@ impl MandlebrotArgs {
     }
 }
 
+#[wasm_bindgen]
+impl MandlebrotArgs {
+    #[wasm_bindgen(method)]
+    pub fn cloned(&self) -> Self {
+        return self.clone();
+    }
+}
+
 // returns lowest number of iterations needed
 #[wasm_bindgen]
-pub fn render_mandlebrot(
+pub async fn render_mandlebrot(
     image_data: js_sys::Uint8ClampedArray,
     results: js_sys::Int32Array,
-    args: &MandlebrotArgs,
+    args: MandlebrotArgs,
     start_index: u32,
     amount: u32,
 ) -> Option<u32> {
@@ -209,20 +218,20 @@ pub fn render_mandlebrot(
     let mut lowest_iterations: Option<u32> = None;
     let mut result: Option<u32>;
 
-    log!(
-        "start: {} , end: {}, size: {} x {}, iter: {}, start_index: {} {}, amount: {}",
-        args.start,
-        args.end,
-        args.width,
-        args.height,
-        args.max_iterations,
-        start_index,
-        pixel,
-        amount,
-    );
+    // log!(
+    //     "start: {} , end: {}, size: {} x {}, iter: {}, start_index: {} {}, amount: {}",
+    //     args.start,
+    //     args.end,
+    //     args.width,
+    //     args.height,
+    //     args.max_iterations,
+    //     start_index,
+    //     pixel,
+    //     amount,
+    // );
 
     loop {
-        let complex = pixel_to_complex(&pixel, args);
+        let complex = pixel_to_complex(&pixel, &args);
 
         result = check_in_mandlebrot(complex.real, complex.imag, args.max_iterations);
 
@@ -249,7 +258,7 @@ pub fn render_mandlebrot(
         draw_pixel(&pixel, result, &args, &image_data);
 
         if count >= amount {
-            log!("done after {}, count is {}", pixel, count);
+            // log!("done after {}, count is {}", pixel, count);
             break;
         } else {
             count += 1;
@@ -288,7 +297,7 @@ pub fn second_round(
 
         
         if count >= amount {
-            log!("done after {}, count is {}", pixel, count);
+            // log!("done after {}, count is {}", pixel, count);
             break;
         } else {
             count += 1;
