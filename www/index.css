@@ -1,23 +1,46 @@
+html { height: 100% }
+
 body {
-    position: absolute;
+    /* position: absolute;
     top: 0;
     left: 0;
+    width: 99%;
+    height: 99%; */
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    background-color: darkgray;
-    height: 99%;
-    width: 99%;
+    margin: 2px;
+    background-color: darkgrey;
+    overflow: scroll;
 }
 
-canvas {
-    display: flex;
-    max-width: 100%;
+#viewport {
+    position: relative;
 }
+
+#viewport canvas {
+    position: absolute;
+    background-color: transparent;
+    left: 50%;
+    transform: translate(-50%, 0) translateY(2px);
+    /* max-height: 100%; */
+    /* max-width: 100%; */
+    /* width: 100%; */
+    /* height: 100%; */
+    /* top: 0; */
+}
+
 input {
     max-width: 50px;
+    margin-right: 25px;
 }
-.spacer {
-    width: 25px;
+
+#fractal-canvas { 
+    border: 1px dotted red;
+    z-index: 0;
+}
+#drag-canvas {
+    border: 1px dashed blue;
+    z-index: 1;
 }
