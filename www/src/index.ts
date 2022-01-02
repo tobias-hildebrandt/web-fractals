@@ -202,6 +202,12 @@ function getInputs(): fractals.MandlebrotArgs {
 
 }
 
+async function work(image_data: Uint8ClampedArray, results: Int32Array, args: fractals.MandlebrotArgs, start_index: number, amount: number) {
+    const val = await fractals.render_mandlebrot(image_data, results, args, start_index, amount);
+    context.putImageData(imageData, 0, 0);
+    return val;
+}
+
 async function useWasmAllPixels() {
     reset();
 
@@ -221,56 +227,85 @@ async function useWasmAllPixels() {
     const totalPixels = inputs.height * inputs.width;
     // const pixelsPerBatch = 25000;
     const pixelsPerBatch = Math.max(totalPixels / 1000, 25000);
+    const CONCURRENT_PROMISES = totalPixels / pixelsPerBatch + 1;
     results = new Int32Array(inputs.height * inputs.width);
-    let lowestIter: number;
+    let lowestIter = 0;
 
-    async function doBatch(secondRound: boolean, pixelsDone: number) {
-        if (!secondRound) {
-            const inputsClone = inputs.cloned();
-            // console.log(`BEFORE RENDER: imageData null? ${imageData.data === null}, results null? ${results === null}, ` +
-            // `inputs: ${argsToString(inputsClone)}, pixelsDone: ${pixelsDone}, pixelsPerBatch: ${pixelsPerBatch}`);
-            const maybeLowest = await fractals.render_mandlebrot(imageData.data, results, inputsClone, pixelsDone, pixelsPerBatch);
+    const renderFutures = [];
+    const secondRoundFutures = [];
 
-            if (lowestIter === null || lowestIter === undefined || maybeLowest < lowestIter) {
-                lowestIter = maybeLowest;
-            }
-        } else {
-            fractals.second_round(imageData.data, results, inputs, pixelsDone, pixelsPerBatch, lowestIter);
-        }
-
-        pixelsDone += pixelsPerBatch;
-
-        context.putImageData(imageData, 0, 0);
-        status.innerText = `${!secondRound ? "first round" : "second round"}: ${(100 * pixelsDone / totalPixels).toFixed(0)}% done`;
-
-        // console.log(`${!secondRound ? "first round" : "second round"}, finished pixels: ${pixelsDone}`);
-
-        if (pixelsDone < totalPixels) {
-            // still have more batches to do
-            // allow for other asyncs to trigger
-            // then recurse
-            setTimeout(async () => { doBatch(secondRound, pixelsDone) }, 0);
-        } else {
-            // done, do not recurse any more
-            if (secondRound) {
-                const endTime = performance.now();
-                const totalSeconds: string = ((endTime - startTime) / 1000).toFixed(2);
-                console.log(`done with all pixels, took ~${totalSeconds} seconds`);
-                status.innerText = `done with WASM :) took ~${totalSeconds} seconds`;
-                startButton.disabled = false;
-                context.putImageData(imageData, 0, 0);
-                return;
-            } else {
-                // do the second round
-                pixelsDone = 0;
-                console.log(`starting second round: lowest iter = ${lowestIter}`);
-                setTimeout(async () => { doBatch(true, 0) }, 0);
-                return false;
-            }
-        }
+    for (let i = 0; i < CONCURRENT_PROMISES; i++) {
+        const inputsClone = inputs.cloned();
+        renderFutures.push(work(imageData.data, results, inputsClone, i * pixelsPerBatch, pixelsPerBatch));
     }
 
-    await doBatch(false, 0);
+    const lowests: number[] = await Promise.all(renderFutures);
+    context.putImageData(imageData, 0, 0);
+
+    lowestIter = Math.min(...lowests);
+
+    for (let i = 0; i < CONCURRENT_PROMISES; i++) {
+        const inputsClone = inputs.cloned();
+        secondRoundFutures.push(fractals.second_round(imageData.data, results, inputsClone, i * pixelsPerBatch, pixelsPerBatch, lowestIter));
+    }
+
+    await Promise.all(renderFutures);
+
+    const endTime = performance.now();
+    const totalSeconds: string = ((endTime - startTime) / 1000).toFixed(2);
+    console.log(`done with all ${totalPixels.toLocaleString()} pixels, took ~${totalSeconds} seconds`);
+    status.innerText = `done with WASM :)  ${totalPixels.toLocaleString()} pixels took ~${totalSeconds} seconds`;
+    startButton.disabled = false;
+    context.putImageData(imageData, 0, 0);
+    return;
+
+    // async function doBatch(secondRound: boolean, pixelsDone: number) {
+    //     if (!secondRound) {
+    //         const inputsClone = inputs.cloned();
+    //         // console.log(`BEFORE RENDER: imageData null? ${imageData.data === null}, results null? ${results === null}, ` +
+    //         // `inputs: ${argsToString(inputsClone)}, pixelsDone: ${pixelsDone}, pixelsPerBatch: ${pixelsPerBatch}`);
+    //         const maybeLowest = await fractals.render_mandlebrot(imageData.data, results, inputsClone, pixelsDone, pixelsPerBatch);
+
+    //         if (lowestIter === null || lowestIter === undefined || maybeLowest < lowestIter) {
+    //             lowestIter = maybeLowest;
+    //         }
+    //     } else {
+    //         fractals.second_round(imageData.data, results, inputs, pixelsDone, pixelsPerBatch, lowestIter);
+    //     }
+
+    //     pixelsDone += pixelsPerBatch;
+
+    //     context.putImageData(imageData, 0, 0);
+    //     status.innerText = `${!secondRound ? "first round" : "second round"}: ${(100 * pixelsDone / totalPixels).toFixed(0)}% done`;
+
+    //     // console.log(`${!secondRound ? "first round" : "second round"}, finished pixels: ${pixelsDone}`);
+
+    //     if (pixelsDone < totalPixels) {
+    //         // still have more batches to do
+    //         // allow for other asyncs to trigger
+    //         // then recurse
+    //         setTimeout(async () => { doBatch(secondRound, pixelsDone) }, 0);
+    //     } else {
+    //         // done, do not recurse any more
+    //         if (secondRound) {
+    //             const endTime = performance.now();
+    //             const totalSeconds: string = ((endTime - startTime) / 1000).toFixed(2);
+    //             console.log(`done with all pixels, took ~${totalSeconds} seconds`);
+    //             status.innerText = `done with WASM :) took ~${totalSeconds} seconds`;
+    //             startButton.disabled = false;
+    //             context.putImageData(imageData, 0, 0);
+    //             return;
+    //         } else {
+    //             // do the second round
+    //             pixelsDone = 0;
+    //             console.log(`starting second round: lowest iter = ${lowestIter}`);
+    //             setTimeout(async () => { doBatch(true, 0) }, 0);
+    //             return false;
+    //         }
+    //     }
+    // }
+
+    // await doBatch(false, 0);
 }
 
 function allPixel() {
@@ -386,7 +421,9 @@ function main() {
     reset();
 }
 
-startButton.onclick = (async () => await useWasmAllPixels());
+startButton.onclick = function() {
+    setTimeout(() => useWasmAllPixels(), 0);
+};
 
 // click the button whenever enter is pressed inside the form
 document.getElementById("inputs").addEventListener("keyup", function (event) {
