@@ -86,57 +86,6 @@ impl Display for Complex {
     }
 }
 
-// TODO: put image data into an array, pass the pointer to JS
-#[wasm_bindgen]
-pub fn mandlebrot_range(
-    _lowest: Complex,
-    _highest: Complex,
-    _image_width: u32,
-    _image_height: u32,
-) -> js_sys::Uint8Array {
-    let array = [1, 2, 3, 4, 5];
-
-    unsafe {
-        return js_sys::Uint8Array::view(&array);
-    }
-}
-
-#[wasm_bindgen]
-pub fn uint8array(len: usize) -> js_sys::Uint8Array {
-    let mut array = vec![0; len];
-
-    for i in 0..len {
-        array[i] = i as u8;
-    }
-
-    unsafe {
-        return js_sys::Uint8Array::view(&array);
-    }
-}
-
-#[wasm_bindgen]
-pub struct PointerStruct {
-    v: Vec<u8>,
-}
-
-#[wasm_bindgen]
-impl PointerStruct {
-    #[wasm_bindgen(constructor)]
-    pub fn new(len: usize) -> Self {
-        let mut array = vec![0; len];
-
-        for i in 0..len {
-            array[i] = i as u8;
-        }
-
-        return PointerStruct { v: array };
-    }
-
-    pub fn u8pointer(self) -> *const u8 {
-        return self.v.as_ptr();
-    }
-}
-
 // if the number is in the mandlebrot set, returns None
 // else, returns how many iterations it took for the cycle to leave the set
 pub fn check_in_mandlebrot(real: f64, imaginary: f64, max_iterations: u32) -> Option<u32> {
@@ -162,7 +111,7 @@ pub fn check_in_mandlebrot(real: f64, imaginary: f64, max_iterations: u32) -> Op
 }
 
 #[derive(Clone)]
-#[wasm_bindgen(inspectable)]
+#[wasm_bindgen(inspectable)] // does inspectable even do anything
 pub struct MandlebrotArgs {
     pub start: Complex,
     pub end: Complex,
@@ -170,8 +119,6 @@ pub struct MandlebrotArgs {
     pub height: u32,
     #[wasm_bindgen(js_name = "maxIterations")]
     pub max_iterations: u32,
-    #[wasm_bindgen(js_name = "keepRatio")]
-    pub keep_ratio: bool,
 }
 
 #[wasm_bindgen(inspectable)]
@@ -183,7 +130,6 @@ impl MandlebrotArgs {
         width: u32,
         height: u32,
         max_iterations: u32,
-        keep_ratio: bool,
     ) -> Self {
         return MandlebrotArgs {
             start,
@@ -191,7 +137,6 @@ impl MandlebrotArgs {
             width,
             height,
             max_iterations,
-            keep_ratio,
         };
     }
 }

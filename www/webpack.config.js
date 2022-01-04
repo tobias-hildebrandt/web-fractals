@@ -33,7 +33,7 @@ module.exports = {
   mode: "development",
   plugins: [
     new CopyWebpackPlugin({
-      patterns: ['index.html', 'index.css']
+      patterns: ['index.html', 'index.css', 'favicon.ico']
     })
   ],
   experiments: {

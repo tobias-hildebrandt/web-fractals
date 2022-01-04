@@ -1,62 +1,115 @@
-import { Complex } from "fractals";
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+
 import * as fractals from "fractals";
-import { memory } from "fractals/fractals_bg.wasm";
-import "regenerator-runtime"; // needed by babel for async
+import { Complex, Pixel } from "fractals";
+import * as common from "./common";
+import { Inputs } from "./common";
 
-fractals.init();
+// class containing readonly references to important DOM elements
+class Elements {
+    static readonly fractalCanvas: HTMLCanvasElement = document.getElementById("fractal-canvas") as HTMLCanvasElement;
+    static readonly dragCanvas: HTMLCanvasElement = document.getElementById("drag-canvas") as HTMLCanvasElement;
 
-class Pixel {
-    x: number;
-    y: number;
-    constructor(x: number, y: number) {
-        this.x = x;
-        this.y = y;
+    static readonly status: HTMLElement = document.getElementById("status") as HTMLElement;
+    static readonly startButton: HTMLButtonElement = document.getElementById("start") as HTMLButtonElement;
+
+    static readonly canvases: HTMLCanvasElement[] = [this.fractalCanvas, this.dragCanvas];
+}
+
+// class to help make interacting with the canvas easier
+class CanvasHelper {
+    public static getContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+        return canvas.getContext("2d")!; // assert this exists
     }
-    toString() {
-        return `(${this.x}, ${this.y})`;
+
+    // maybe invalid reference after setDimensions()???
+    public static getImageData(canvas: HTMLCanvasElement): ImageData {
+        return this.getContext(canvas).getImageData(0, 0, canvas.width, canvas.height);
+    }
+
+    public static draw(canvas: HTMLCanvasElement, imageData: ImageData) {
+        this.getContext(canvas).putImageData(imageData, 0, 0);
+    }
+
+    public static clear(canvas: HTMLCanvasElement) {
+        this.getContext(canvas).clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    public static setDimensions(canvas: HTMLCanvasElement, newWidth: number, newHeight: number) {
+        canvas.height = newHeight;
+        canvas.width = newWidth;
     }
 }
 
-interface Inputs {
-    start: Complex;
-    end: Complex;
-    maxIterations: number;
-    width: number;
-    height: number;
-    keepRatio: boolean;
+function getCurrentInputs(): common.Inputs | null {
+    const startReal = getInputValue("start-real");
+    const endReal = getInputValue("end-real");
+    const startImag = getInputValue("start-imag");
+    const endImag = getInputValue("end-imag");
+    const maxIterations = getInputValue("max-iter");
+    const width = getInputValue("canvas-width");
+    const height = getInputValue("canvas-height");
+    const keepRatio = (document.getElementById("keep-ratio") as HTMLInputElement).checked;
+
+    if (endReal <= startReal || endImag <= startImag) {
+        alert("end value must be greater than start value!");
+        return null;
+    }
+
+    return new common.Inputs(
+        new Complex(startReal, startImag),
+        new Complex(endReal, endImag),
+        maxIterations,
+        width,
+        height,
+        keepRatio,
+    );
 }
 
-const fractalCanvas: HTMLCanvasElement = document.getElementById("fractal-canvas") as HTMLCanvasElement;
-const dragCanvas: HTMLCanvasElement = document.getElementById("drag-canvas") as HTMLCanvasElement;
+class State {
+    public alreadyRenderedOnce = false;
+    public constructor(public activeInputs: common.Inputs) { }
+    public results: Int32Array | null = null;
+    public canvasClickDown: fractals.Pixel | null = null;
+    public canvasClickUp: fractals.Pixel | null = null;
+    public clickDown = false;
+    public workersActive = 0;
+    public workersDone = 0;
+    public workers: Worker[] = [];
+    public currentPass = 0;
+    public pixelsPerBatch = 0;
+    public lowestIter: number | null = null;
+    public startTime: number | null = null;
 
-let canvasHeight: number;
-let canvasWidth: number;
+}
 
-const status: HTMLElement = document.getElementById("status") as HTMLElement;
-const startButton: HTMLButtonElement = document.getElementById("start") as HTMLButtonElement;
+function main() {
+    fractals.init();
 
-let context: CanvasRenderingContext2D;
-let imageData: ImageData;
+    // reference should never change
+    const state: State = new State(getCurrentInputs()!); // assert that they exist
 
-let canvasClickDown: Pixel;
-let canvasClickUp: Pixel;
-let clickDown = false;
+    setUpUpdateRatioEvents();
 
-let oldInputs: Inputs;
-let results: Int32Array;
+    setUpCanvasEvents(state);
 
-function setCanvasSizes(height: number, width: number) {
-    canvasHeight = height;
-    canvasWidth = width;
+    setUpFormEvents(state);
 
-    fractalCanvas.height = height;
-    fractalCanvas.width = width;
+    reset(Elements.canvases);
 
-    dragCanvas.height = height;
-    dragCanvas.width = width;
+    setCanvasesSizes(state, Elements.canvases);
 
-    context = fractalCanvas.getContext("2d");
-    imageData = context.getImageData(0, 0, canvasWidth, canvasHeight);
+    createWorkers(state, 20);
+
+    // TODO: disable button until workers are finished initializing (send ack message and wait for response)
+
+    Elements.startButton.disabled = false; // ready!
+}
+
+function setCanvasesSizes(state: State, canvases: HTMLCanvasElement[]) {
+    for (const canvas of canvases) {
+        CanvasHelper.setDimensions(canvas, state.activeInputs.width, state.activeInputs.height);
+    }
 
     updateRatios();
 }
@@ -77,10 +130,12 @@ function pixelToComplex(pixel: Pixel, inputs: Inputs): Complex {
     return new Complex(real, imag);
 }
 
-function reset() {
-    context.clearRect(0, 0, canvasWidth, canvasHeight);
+function reset(canvases: HTMLCanvasElement[]) {
+    for (const canvas of canvases) {
+        CanvasHelper.clear(canvas);
+    }
 
-    status.innerText = `not started`;
+    Elements.status.innerText = `not started`;
 }
 
 function getInputValue(id: string) {
@@ -93,190 +148,232 @@ function complexToString(complex: Complex) {
 }
 
 function argsToString(args: fractals.MandlebrotArgs) {
-    return `start: ${args.start} end: ${args.end} size: ${args.width} x ${args.height}, maxIterations: ${args.maxIterations}, keepRatio: ${args.keepRatio}`;
+    return `start: ${args.start} end: ${args.end} size: ${args.width} x ${args.height}, maxIterations: ${args.maxIterations}`;
 }
 
-function getInputs(): fractals.MandlebrotArgs {
-    const startReal = getInputValue("start-real");
-    const endReal = getInputValue("end-real");
-    const startImag = getInputValue("start-imag");
-    const endImag = getInputValue("end-imag");
-    const maxIterations = getInputValue("max-iter");
-    const width = getInputValue("canvas-width");
-    const height = getInputValue("canvas-height");
-    const keepRatio = (document.getElementById("keep-ratio") as HTMLInputElement).checked;
-
-    if (endReal <= startReal || endImag <= startImag) {
-        alert("end value must be greater than start value!");
-        return null;
-    }
-
-    return new fractals.MandlebrotArgs(
-        new Complex(startReal, startImag),
-        new Complex(endReal, endImag),
-        width,
-        height,
-        maxIterations,
-        keepRatio,
-    );
-
+function pixelToString(pixel: Pixel) {
+    return `(${pixel.x, pixel.y})`;
 }
 
-async function useWasmAllPixels() {
-    reset();
+function useWasmAllPixels(state: State) {
+    reset(Elements.canvases);
 
-    const inputs = getInputs();
+    const newInputs = getCurrentInputs();
 
-    if (inputs === null) {
+    if (newInputs === null) {
         return;
     }
 
-    oldInputs = inputs;
+    state.activeInputs = newInputs;
+    state.results = new Int32Array(newInputs.height * newInputs.width);
+    state.startTime = performance.now();
+    state.currentPass = 1;
+    state.lowestIter = null;
+    state.workersDone = 0;
 
-    startButton.disabled = true;
-    setCanvasSizes(inputs.height, inputs.width);
+    Elements.startButton.disabled = true;
 
-    const startTime = performance.now();
+    setCanvasesSizes(state, Elements.canvases);
 
-    const totalPixels = inputs.height * inputs.width;
-    // const pixelsPerBatch = 25000;
-    // const NUM_WORKERS = 
-    const pixelsPerBatch = Math.max(totalPixels / 10, 25000);
-    const NUM_WORKERS = totalPixels / pixelsPerBatch;
-    // const NUM_WORKERS = 5;
-    results = new Int32Array(inputs.height * inputs.width);
-    let lowestIter: number;
-    let workersDone = 0;
-    const workers: Worker[] = [];
+    const totalPixels = newInputs.height * newInputs.width;
+    console.log(`total pixels: ${totalPixels}, imageData size: ~${totalPixels * 4 / 1000000}MB`)
+    // each worker should have at least 25000 pixels
+    // and there should be at most 50 workers
+    state.pixelsPerBatch = Math.max(totalPixels / 20, 25000); 
+    state.workersActive = totalPixels / state.pixelsPerBatch;
 
-    let currentPass = 1;
+    updateStatusText(state);
 
-    status.innerText = `pass #${currentPass}, ${workersDone} of ${NUM_WORKERS} workers done (${(100 * workersDone / NUM_WORKERS).toFixed(2)}%)`;
+    // if we need more workers
+    if (state.workers.length < state.workersActive) {
+        // init however many new workers we need
+        const numNewWorkers = state.workersActive - state.workers.length;
+        createWorkers(state, numNewWorkers);
+    }
 
-    // TODO: cleanup this mess 
-    for (let id = 0; id < NUM_WORKERS; id++) {
+    const inputsJSON = JSON.stringify(newInputs);
+
+    // send message to workers
+    for (let id = 0; id < state.workersActive; id++) {
+        const worker: Worker = state.workers[id];
+        const message: common.RequestMessage = {
+            idNumber: id,
+            pass: 1,
+            inputsJSON: inputsJSON,
+            pixelsPerBatch: state.pixelsPerBatch,
+        }
+        worker.postMessage(message);
+        // console.log(`main thread posted message to worker #${id}`);
+    }
+}
+
+function createWorkers(state: State, numberOfWorkers: number) {
+    console.log(`creating ${numberOfWorkers} workers!`);
+    for (let i = 0; i <= numberOfWorkers; i++) {
         const worker = new Worker(new URL('./worker.ts', import.meta.url));
 
+        const id = state.workers.length - 1;
         worker.onerror = (message) => {
             console.log(`worker ${id} had an error: ${message}`);
         }
 
         // when main thread receives a message
         worker.onmessage = (message) => {
-            const workerId = message.data[0];
-            const startingPixel = pixelsPerBatch * workerId;
-            const pass = message.data[1];
-            const workerImage: Uint8ClampedArray = message.data[2];
-
-            // only on 1st pass
-            if (pass == 1) {
-                const workerResults: Int32Array = message.data[3];
-
-                // copy worker results
-                for (let j = 0; j < pixelsPerBatch; j++) {
-                    results[startingPixel + j] = workerResults[j];
-                }
-
-                // handle min
-                const min = message.data[4];
-                if (lowestIter === null || lowestIter === undefined || min < lowestIter) {
-                    lowestIter = min;
-                }
-            }
-
-            // on all passes
-            // copy worker pixels
-            for (let j = 0; j < pixelsPerBatch * 4; j++) {
-                imageData.data[startingPixel * 4 + j] = workerImage[j];
-                // if (j % pixelsPerBatch == 0) {
-                //     console.log(`on byte ${j} of worker ${workerId}, value is ${workerImage[j]}`);
-                // }
-            }
-
-            // draw the incomplete image
-            context.putImageData(imageData, 0, 0);
-
-            workersDone += 1;
-
-            status.innerText = `pass #${currentPass}, ${workersDone} of ${NUM_WORKERS} workers done (${(100 * workersDone / NUM_WORKERS).toFixed(2)}%)`;
-
-            if (workersDone == NUM_WORKERS) {
-                if (pass === 2) {
-                    // finished second pass
-                    const endTime = performance.now();
-                    // console.log(imageData.data);
-                    const totalSeconds: string = ((endTime - startTime) / 1000).toFixed(2);
-                    console.log(`done with all pixels, took ~${totalSeconds} seconds`);
-                    console.log(`min = ${lowestIter}`);
-                    status.innerText = `done with WASM :) took ~${totalSeconds} seconds`;
-                    startButton.disabled = false;
-                    context.putImageData(imageData, 0, 0);
-
-                    for (let j = 0; j < NUM_WORKERS; j++) {
-                        const worker: Worker = workers[j];
-                        worker.terminate();
-                    }
-                    return;
-                } else {
-                    // finished first pass
-                    console.log(`done with first pass, switching to second`);
-                    console.log(`min = ${lowestIter}`);
-                    for (let j = 0; j < NUM_WORKERS; j++) {
-                        const worker: Worker = workers[j];
-                        const tempImage: Uint8ClampedArray = new Uint8ClampedArray(pixelsPerBatch * 4);
-                        const tempResults: Int32Array = new Int32Array(pixelsPerBatch);
-                        const secondRoundStartingPixel = j * pixelsPerBatch;
-
-                        // copy results
-                        for (let k = 0; k < pixelsPerBatch; k++) {
-                            tempResults[k] = results[secondRoundStartingPixel + k];
-                        }
-
-                        // copy pixels
-                        for (let k = 0; k < pixelsPerBatch * 4; k++) {
-                            tempImage[k] = imageData.data[secondRoundStartingPixel * 4 + k];
-                        }
-
-                        worker.postMessage([j, 2, JSON.stringify(inputs), pixelsPerBatch, lowestIter, tempImage, tempResults]); // second pass
-                    }
-                    workersDone = 0;
-                    currentPass = 2;
-
-                    status.innerText = `pass #${currentPass}, ${workersDone} of ${NUM_WORKERS} workers done (${(100 * workersDone / NUM_WORKERS).toFixed(2)}%)`;
-                }
-            }
-
+            workerOnMessage(message, state);
         };
 
         // console.log(`main thread sees worker ${id} init done!`);
-        workers.push(worker);
-    }
-    for (let id = 0; id < NUM_WORKERS; id++) {
-        const worker: Worker = workers[id];
-
-        worker.postMessage([id, 1, JSON.stringify(inputs), pixelsPerBatch]);
-        // console.log(`main thread posted message to worker #${id}`);
+        state.workers.push(worker);
     }
 }
 
-function clearDragCanvas() {
-    dragCanvas.getContext("2d").clearRect(0, 0, canvasWidth, canvasHeight);
+function updateStatusText(state: State) {
+    Elements.status.innerText =
+        `pass #${state.currentPass}, ${state.workersDone} of ${state.workersActive} ` +
+        `workers done (${(100 * state.workersDone / state.workersActive).toFixed(2)}%)`;
+}
+
+function workerOnMessage(message: MessageEvent, state: State) {
+    const imageData = CanvasHelper.getImageData(Elements.fractalCanvas);
+
+    const response = message.data as unknown as common.ResponseMessage;
+    const startingPixel = state.pixelsPerBatch * response.idNumber;
+
+    // only on 1st pass
+    if (response.pass == 1) {
+        const firstPassResponse = response as common.FirstPassResponseMessage;
+
+        const workerResults: Int32Array = firstPassResponse.results;
+
+        // copy worker results
+        for (let j = 0; j < state.pixelsPerBatch; j++) {
+            state.results![startingPixel + j] = workerResults[j];
+        }
+
+        // handle min
+        const min = firstPassResponse.min;
+        if (state.lowestIter === null || min < state.lowestIter) {
+            state.lowestIter = min;
+        }
+    }
+
+
+    // on all passes, copy worker pixels
+    for (let j = 0; j < state.pixelsPerBatch * 4; j++) {
+        imageData.data[startingPixel * 4 + j] = response.imageData[j];
+        // if (j % pixelsPerBatch == 0) {
+        //     console.log(`on byte ${j} of worker ${workerId}, value is ${response.imageData[j]}`);
+        // }
+    }
+
+    // draw the incomplete image
+    CanvasHelper.draw(Elements.fractalCanvas, imageData);
+
+    state.workersDone += 1;
+
+    updateStatusText(state);
+
+    // if all workers have finished
+    if (state.workersDone == state.workersActive) {
+
+        if (response.pass == 1) {
+            // finished first pass
+            if (!state.lowestIter) {
+                console.log(`error starting second pass! state.lowestIter = ${state.lowestIter}`);
+                return;
+            }
+
+            console.log(`done with first pass, switching to second`);
+            console.log(`min = ${state.lowestIter}`);
+            for (let j = 0; j < state.workersActive; j++) {
+                const worker: Worker = state.workers[j];
+                const tempImage: Uint8ClampedArray = new Uint8ClampedArray(state.pixelsPerBatch * 4);
+                const tempResults: Int32Array = new Int32Array(state.pixelsPerBatch);
+                const secondRoundStartingPixel = j * state.pixelsPerBatch;
+
+                // copy results
+                for (let k = 0; k < state.pixelsPerBatch; k++) {
+                    tempResults[k] = state.results![secondRoundStartingPixel + k];
+                }
+
+                // copy pixels
+                for (let k = 0; k < state.pixelsPerBatch * 4; k++) {
+                    tempImage[k] = imageData.data[secondRoundStartingPixel * 4 + k];
+                }
+
+                const message: common.SecondPassRequestMessage = {
+                    idNumber: j,
+                    pass: 2,
+                    inputsJSON: JSON.stringify(state.activeInputs),
+                    pixelsPerBatch: state.pixelsPerBatch,
+                    min: state.lowestIter,
+                    imageData: tempImage,
+                    results: tempResults,
+                }
+
+                // second pass, pass references to arrays
+                worker.postMessage(message, [tempImage.buffer, tempResults.buffer]);
+            }
+
+            state.workersDone = 0;
+            state.currentPass = 2;
+
+            updateStatusText(state);
+
+        } else if (response.pass === 2) {
+            // finished second pass
+            const endTime = performance.now();
+            // console.log(imageData.data);
+            let totalSeconds: string;
+            if (state.startTime) {
+                totalSeconds = ((endTime - state.startTime) / 1000).toFixed(2);
+            } else {
+                totalSeconds = "error";
+            }
+            console.log(`done with all pixels, took ~${totalSeconds} seconds`);
+            Elements.status.innerText = `done with WASM :) took ~${totalSeconds} seconds`;
+
+            Elements.startButton.disabled = false;
+            CanvasHelper.draw(Elements.fractalCanvas, imageData);
+
+            // for (let j = 0; j < totalWorkers; j++) {
+            //     const worker: Worker = state.workers[j];
+            //     worker.terminate();
+            // }
+
+            state.results = null;
+            state.startTime = null;
+            // state.workers = [];
+            state.currentPass = 0;
+            state.lowestIter = null;
+            state.workersDone = 0;
+            state.alreadyRenderedOnce = true;
+        } else {
+            console.log(`main thread received message with unrecognized pass value of ${response.pass}`);
+        }
+    }
 }
 
 function updateRatios() {
 
-    const inputs = getInputs();
-    const areaRatioElem = document.getElementById("area-ratio");
-    const canvasRatioElem = document.getElementById("canvas-ratio");
+    const currentInputs = getCurrentInputs();
+
+    if (!currentInputs) {
+        console.log("unable to get current inputs!")
+        return;
+    }
+
+    const areaRatioElem = document.getElementById("area-ratio")!;
+    const canvasRatioElem = document.getElementById("canvas-ratio")!;
 
     // x / y
-    const areaRatio = (inputs.end.real - inputs.start.real) / (inputs.end.imag - inputs.start.imag);
+    const areaRatio = (currentInputs.end.real - currentInputs.start.real) / (currentInputs.end.imag - currentInputs.start.imag);
     if (!Number.isFinite(areaRatio)) {
         areaRatioElem.innerText = "invalid";
     }
     areaRatioElem.innerText = `${areaRatio.toFixed(2)}`;
 
-    const canvasRatio = inputs.width / inputs.height;
+    const canvasRatio = currentInputs.width / currentInputs.height;
     if (!Number.isFinite(canvasRatio)) {
         canvasRatioElem.innerText = "invalid";
     } else {
@@ -291,174 +388,166 @@ function setUpUpdateRatioEvents() {
         "end-real",
         "start-imag",
         "end-imag",
+        "canvas-width",
         "canvas-height",
-        "canvas-width"
     ];
 
     for (const inputElemName of inputElemNames) {
-        document.getElementById(inputElemName).oninput = updateRatios;
+        // update the ratios no matter the event
+        document.getElementById(inputElemName)!.oninput = updateRatios;
     }
 }
 
-function main() {
-    setCanvasSizes(500, 500);
+function setUpFormEvents(state: State) {
+    Elements.startButton.onclick = () => {
+        useWasmAllPixels(state);
+    };
 
-    reset();
-}
-
-function testWorkers() {
-    const worker = new Worker(new URL('./testworker.ts', import.meta.url));
-    worker.postMessage("hello");
-
-    worker.onmessage = (message: MessageEvent<string>) => {
-        console.log(`main sees message: ${message.data}`);
-    }
-}
-
-startButton.onclick = () => {
-    testWorkers();
-    useWasmAllPixels();
-}
-
-// click the button whenever enter is pressed inside the form
-document.getElementById("inputs").addEventListener("keyup", function (event) {
-    if (event.key === "Enter") {
-        event.preventDefault();
-        startButton.click();
-    }
-});
-
-document.getElementById("save").onclick = function () {
-    const image = fractalCanvas.toDataURL();
-
-    window.open(image, "_blank");
-
-    // const date = new Date();
-    // date.setMilliseconds(0);
-
-    // let timeStr = date.toISOString();
-    // timeStr = timeStr.slice(0, -5);
-    // timeStr = timeStr.replace(/:/g, "-");
-
-    // console.log(`timeStr: ${timeStr}`);
-
-    // const tempAnchor = document.createElement('a');
-    // tempAnchor.download = `mandlebrot-${timeStr}.png`;
-    // tempAnchor.href = image;
-
-    // // temporarily add it, trigger it, then delete it
-    // document.body.appendChild(tempAnchor);
-    // tempAnchor.click();
-    // document.body.removeChild(tempAnchor);
-}
-
-// click on canvas
-dragCanvas.addEventListener("mousedown", function (event) {
-    // only care about left click
-    if (event.button !== 0) {
-        return;
-    }
-
-    if (!clickDown) {
-        clickDown = true;
-        const clickDownPixel = new Pixel(event.x, event.y);
-        const boundingBox = dragCanvas.getBoundingClientRect();
-        // console.log(`down: ${clickDownPixel}, bounding left: ${boundingBox.left}, bounding top: ${boundingBox.top}`);
-        canvasClickDown = new Pixel(Math.floor(clickDownPixel.x - boundingBox.left), Math.floor(clickDownPixel.y - boundingBox.top));
-        console.log(`canvasStart = ${canvasClickDown}`);
-    }
-});
-
-dragCanvas.addEventListener("mouseup", function (event) {
-    if (clickDown) {
-        clickDown = false;
-        const clickUpPixel = new Pixel(event.x, event.y);
-        const boundingBox = dragCanvas.getBoundingClientRect();
-        // console.log(`up: ${clickUpPixel}`);
-        // console.log(`canvas offsetlet: ${canvas.offsetLeft}`);
-        // let canvasStart = new Pixel(clickDownPixel.x - dragCanvas.offsetLeft, clickDownPixel.y - dragCanvas.offsetTop);
-        canvasClickUp = new Pixel(Math.floor(clickUpPixel.x - boundingBox.left), Math.floor(clickUpPixel.y - boundingBox.top));
-
-        console.log(`canvasEnd = ${canvasClickUp}`);
-    }
-});
-
-dragCanvas.addEventListener("mousemove", function (event) {
-    if (clickDown) {
-        const inputs = getInputs();
-
-        clearDragCanvas();
-
-        const context = dragCanvas.getContext("2d");
-        context.lineWidth = 2;
-        context.strokeStyle = "red";
-
-        let newY = event.offsetY;
-        let newX = event.offsetX;
-
-        const yDist = event.offsetY - canvasClickDown.y;
-        const xDist = event.offsetX - canvasClickDown.x;
-
-        if (inputs.keepRatio) {
-            if (Math.abs(yDist) > Math.abs(xDist)) {
-                newX = canvasClickDown.x + yDist * (inputs.width / inputs.height);
-            } else {
-                newY = canvasClickDown.y + xDist * (inputs.height / inputs.width);
-            }
-        } else {
-            const newHeight = Math.abs(Math.floor(inputs.width * ((newY - canvasClickDown.y) / (newX - canvasClickDown.x))));
-
-            (document.getElementById("canvas-height") as HTMLInputElement).valueAsNumber = newHeight;
+    // click the button whenever enter is pressed inside the form
+    document.getElementById("inputs")!.addEventListener("keyup", function (event) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            Elements.startButton.click();
         }
+    });
 
+    document.getElementById("save")!.onclick = function () {
+        const image = Elements.fractalCanvas.toDataURL();
 
-        // TODO: fix or scrap this
-        const width = newX - canvasClickDown.x, height = newY - canvasClickDown.y;
+        window.open(image, "_blank");
 
-        if (newY < canvasClickDown.y) {
-            // above start
-            if (newX < canvasClickDown.x) {
-                // upper left of start
-                // height = -height;
-            } else {
-                // upper right of start
-                // height = -height;
-            }
-        } else {
-            if (newX < canvasClickDown.x) {
-                // lower left of start
-                // height = -height;
-            } else {
-                // lower right of start
-                // width = -width;
-            }
-        }
+        // const date = new Date();
+        // date.setMilliseconds(0);
 
+        // let timeStr = date.toISOString();
+        // timeStr = timeStr.slice(0, -5);
+        // timeStr = timeStr.replace(/:/g, "-");
 
-        context.strokeRect(canvasClickDown.x, canvasClickDown.y, width, height);
+        // console.log(`timeStr: ${timeStr}`);
 
-        if (oldInputs === undefined || oldInputs === null) {
+        // const tempAnchor = document.createElement('a');
+        // tempAnchor.download = `mandlebrot-${timeStr}.png`;
+        // tempAnchor.href = image;
+
+        // // temporarily add it, trigger it, then delete it
+        // document.body.appendChild(tempAnchor);
+        // tempAnchor.click();
+        // document.body.removeChild(tempAnchor);
+    };
+}
+
+function setUpCanvasEvents(state: State) {
+    // click on canvas
+    Elements.dragCanvas.addEventListener("mousedown", function (event) {
+        // only care about left click
+        if (event.button !== 0) {
             return;
         }
 
-        const down = pixelToComplex(new Pixel(canvasClickDown.x, canvasClickDown.y), oldInputs);
-        const current = pixelToComplex(new Pixel(newX, newY), oldInputs);
-
-        if (down.real == current.real || down.imag == current.imag) {
-            console.log("not adjusting, width/length of 0");
-            return;
+        if (!state.clickDown) {
+            state.clickDown = true;
+            const clickDownPixel = new Pixel(event.x, event.y);
+            const boundingBox = Elements.dragCanvas.getBoundingClientRect();
+            // console.log(`down: ${clickDownPixel}, bounding left: ${boundingBox.left}, bounding top: ${boundingBox.top}`);
+            state.canvasClickDown = new Pixel(Math.floor(clickDownPixel.x - boundingBox.left), Math.floor(clickDownPixel.y - boundingBox.top));
+            console.log(`canvasStart = ${state.canvasClickDown}`);
         }
+    });
 
-        (document.getElementById("start-real") as HTMLInputElement).valueAsNumber = Math.min(down.real, current.real);
-        (document.getElementById("start-imag") as HTMLInputElement).valueAsNumber = Math.min(down.imag, current.imag);
+    Elements.dragCanvas.addEventListener("mouseup", function (event) {
+        if (state.clickDown) {
+            state.clickDown = false;
+            const clickUpPixel = new Pixel(event.x, event.y);
+            const boundingBox = Elements.dragCanvas.getBoundingClientRect();
+            // console.log(`up: ${clickUpPixel}`);
+            // console.log(`canvas offsetlet: ${canvas.offsetLeft}`);
+            // let canvasStart = new Pixel(clickDownPixel.x - dragCanvas.offsetLeft, clickDownPixel.y - dragCanvas.offsetTop);
+            state.canvasClickUp = new Pixel(Math.floor(clickUpPixel.x - boundingBox.left), Math.floor(clickUpPixel.y - boundingBox.top));
 
-        (document.getElementById("end-real") as HTMLInputElement).valueAsNumber = Math.max(down.real, current.real);
-        (document.getElementById("end-imag") as HTMLInputElement).valueAsNumber = Math.max(down.imag, current.imag);
+            console.log(`canvasEnd = ${state.canvasClickUp}`);
+        }
+    });
+
+    Elements.dragCanvas.addEventListener("mousemove", function (event) {
+        if (state.clickDown && state.canvasClickDown) {
+            const newInputs = getCurrentInputs();
+
+            if (!newInputs) {
+                console.log("unable to get current inputs!");
+                return;
+            }
+
+            CanvasHelper.clear(Elements.dragCanvas);
+
+            const context = CanvasHelper.getContext(Elements.dragCanvas);
+            context.lineWidth = 2;
+            context.strokeStyle = "red";
+
+            let newY = event.offsetY;
+            let newX = event.offsetX;
+
+            const yDist = event.offsetY - state.canvasClickDown.y;
+            const xDist = event.offsetX - state.canvasClickDown.x;
+
+            if (newInputs.keepRatio) {
+                if (Math.abs(yDist) > Math.abs(xDist)) {
+                    newX = state.canvasClickDown.x + yDist * (newInputs.width / newInputs.height);
+                } else {
+                    newY = state.canvasClickDown.y + xDist * (newInputs.height / newInputs.width);
+                }
+            } else {
+                const newHeight = Math.abs(Math.floor(newInputs.width * ((newY - state.canvasClickDown.y) / (newX - state.canvasClickDown.x))));
+
+                (document.getElementById("canvas-height") as HTMLInputElement).valueAsNumber = newHeight;
+            }
 
 
-    }
-});
+            // TODO: fix or scrap this
+            const width = newX - state.canvasClickDown.x, height = newY - state.canvasClickDown.y;
 
-setUpUpdateRatioEvents();
+            if (newY < state.canvasClickDown.y) {
+                // above start
+                if (newX < state.canvasClickDown.x) {
+                    // upper left of start
+                    // height = -height;
+                } else {
+                    // upper right of start
+                    // height = -height;
+                }
+            } else {
+                if (newX < state.canvasClickDown.x) {
+                    // lower left of start
+                    // height = -height;
+                } else {
+                    // lower right of start
+                    // width = -width;
+                }
+            }
+
+
+            context.strokeRect(state.canvasClickDown.x, state.canvasClickDown.y, width, height);
+
+            if (!state.alreadyRenderedOnce) {
+                return;
+            }
+
+            const down = pixelToComplex(new Pixel(state.canvasClickDown.x, state.canvasClickDown.y), state.activeInputs);
+            const current = pixelToComplex(new Pixel(newX, newY), state.activeInputs);
+
+            if (!down || !current || down.real === current.real || down.imag === current.imag) {
+                console.log("not adjusting, width/length of 0");
+                return;
+            }
+
+            (document.getElementById("start-real") as HTMLInputElement).valueAsNumber = Math.min(down.real, current.real);
+            (document.getElementById("start-imag") as HTMLInputElement).valueAsNumber = Math.min(down.imag, current.imag);
+
+            (document.getElementById("end-real") as HTMLInputElement).valueAsNumber = Math.max(down.real, current.real);
+            (document.getElementById("end-imag") as HTMLInputElement).valueAsNumber = Math.max(down.imag, current.imag);
+
+
+        }
+    });
+}
 
 main();

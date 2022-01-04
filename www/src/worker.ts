@@ -1,60 +1,50 @@
-// import("../../pkg").then(wasm => {
-//     self.addEventListener("message", message => {
-//         console.log(`real worker sees message`);
-//         // wasm.init();
-//         // console.log(`worker sees ${message.data}`);
-//         // // const args: fractals.MandlebrotArgs = null;
-//         // const idNumber = message.data[0];
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
+import * as common from "./common"; // only for typescript warnings?
+// import "regenerator-runtime"; // for async, needed by babel
+import 'regenerator-runtime/runtime';
 
+// typescript linting workaround
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const sendMessage: any = self.postMessage;
 
-//         // console.log(`starting worker ${idNumber}`);
-//         // const args = message.data[1];
-//         // const pixelsPerBatch = message.data[2];
+onmessage = async (message) => {
+    const common = await import("./common");
+    const fractals = await import("../../pkg")
+    // console.log(`worker sees ${JSON.stringify(message.data)}`);
 
-//         // const fakeImageDataArray = new Uint8ClampedArray(pixelsPerBatch * 4);
-//         // const fakeResultsArray = new Int32Array(pixelsPerBatch);
+    const request = message.data as unknown as common.RequestMessage;
+    console.log(`worker ${request.idNumber} starting pass ${request.pass}`);
 
-//         // const min = wasm.render_mandlebrot(fakeImageDataArray, fakeResultsArray, args, idNumber * pixelsPerBatch, pixelsPerBatch);
-//         // // const min = 1;
-//         // postMessage([min, fakeImageDataArray, fakeResultsArray]);
-//     });
-// });
+    const parsed: common.Inputs = JSON.parse(request.inputsJSON) as common.Inputs;
+    const args = common.inputsToArgs(parsed);
 
-onmessage = message => {
-    import("../../pkg").then(fractals => {
-        // console.log(`real worker sees message!!!`);
-        // fractals.init();
-        // console.log(`worker sees ${message.data}`);
-        const idNumber: number = message.data[0];
-        const pass: number = message.data[1];
-        // console.log(`starting worker ${idNumber}`);
-        const parsed = JSON.parse(message.data[2]);
-        const args = new fractals.MandlebrotArgs(
-            new fractals.Complex(parsed.start.real, parsed.start.imag),
-            new fractals.Complex(parsed.end.real, parsed.end.imag),
-            parsed.width,
-            parsed.height,
-            parsed.maxIterations,
-            parsed.keepRatio,
-        );
-        const pixelsPerBatch: number = message.data[3];
-        
-        console.log(`worker ${idNumber} on pass ${pass}`);
-        if (pass == 1) {
-            const fakeImageDataArray = new Uint8ClampedArray(pixelsPerBatch * 4);
-            const fakeResultsArray = new Int32Array(pixelsPerBatch);
-            const min = fractals.render_mandlebrot(fakeImageDataArray, fakeResultsArray, args, idNumber * pixelsPerBatch, pixelsPerBatch);
-            postMessage([idNumber, pass, fakeImageDataArray, fakeResultsArray, min]);
-        } else if (pass == 2) {
-            const theMin = message.data[4];
-            const imageData = message.data[5];
-            const results = message.data[6];
-            fractals.second_round(imageData, results, args, idNumber * pixelsPerBatch, pixelsPerBatch, theMin);
-            postMessage([idNumber, pass, imageData]);
-        }
-    });
+    if (request.pass == 1) {
+        const imageDataArray = new Uint8ClampedArray(request.pixelsPerBatch * 4);
+        const resultsArray = new Int32Array(request.pixelsPerBatch);
+        const min = fractals.render_mandlebrot(imageDataArray, resultsArray, args, request.idNumber * request.pixelsPerBatch, request.pixelsPerBatch);
+        const message: common.FirstPassResponseMessage = {
+            results: resultsArray,
+            min: min!,
+            idNumber: request.idNumber,
+            pass: request.pass,
+            imageData: imageDataArray
+        };
+        sendMessage(message, [imageDataArray.buffer, resultsArray.buffer]);
+    } else if (request.pass == 2) {
+        const secondPassRequest: common.SecondPassRequestMessage = request as common.SecondPassRequestMessage;
+        fractals.second_round(secondPassRequest.imageData, secondPassRequest.results, args, request.idNumber * request.pixelsPerBatch, request.pixelsPerBatch, secondPassRequest.min);
+        const message: common.ResponseMessage = {
+            idNumber: request.idNumber,
+            pass: request.pass,
+            imageData: secondPassRequest.imageData
+        };
+        sendMessage(message, [secondPassRequest.imageData.buffer]);
+    } else {
+        console.log(`worker ${request.idNumber} got a unrecognized pass number: ${request.pass}`);
+    }
+    console.log(`worker ${request.idNumber} finished pass ${request.pass}`);
 }
 
-onerror = e => {
+onmessageerror = e => {
     console.log(`worker encountered error: ${e}`);
 }
