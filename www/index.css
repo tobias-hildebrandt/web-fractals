@@ -38,7 +38,7 @@ input {
 
 #fractal-canvas { 
     border: 1px dotted red;
-    z-index: 0;
+    z-index: 2;
 }
 #drag-canvas {
     border: 1px dashed blue;

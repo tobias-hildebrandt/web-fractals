@@ -442,25 +442,36 @@ function setUpFormEvents(state: State) {
 }
 
 function setUpCanvasEvents(state: State) {
+    Elements.fractalCanvas.addEventListener("mousedown", function (event) {
+        if (event.button === 0) { // left click
+            Elements.fractalCanvas.style.zIndex = "0"; // move fractal canvas behind drag canvas
+            Elements.dragCanvas.dispatchEvent(new MouseEvent("mousedown", event)); // pass event to drag canvas
+        }
+    });
+
+    Elements.fractalCanvas.addEventListener("mouseup", function (event) {
+        if (event.button === 0) { // left click
+            Elements.fractalCanvas.style.zIndex = "2"; // move fractal canvas behind drag canvas
+        }
+    });
+
     // click on canvas
     Elements.dragCanvas.addEventListener("mousedown", function (event) {
-        // only care about left click
-        if (event.button !== 0) {
-            return;
-        }
-
-        if (!state.clickDown) {
+        if (!state.clickDown && event.button === 0) { // left click
+            CanvasHelper.clear(Elements.dragCanvas);
             state.clickDown = true;
             const clickDownPixel = new Pixel(event.x, event.y);
             const boundingBox = Elements.dragCanvas.getBoundingClientRect();
             // console.log(`down: ${clickDownPixel}, bounding left: ${boundingBox.left}, bounding top: ${boundingBox.top}`);
             state.canvasClickDown = new Pixel(Math.floor(clickDownPixel.x - boundingBox.left), Math.floor(clickDownPixel.y - boundingBox.top));
             console.log(`canvasStart = ${state.canvasClickDown}`);
+            
         }
     });
 
     Elements.dragCanvas.addEventListener("mouseup", function (event) {
-        if (state.clickDown) {
+        if (state.clickDown && event.button === 0) { // left click
+
             state.clickDown = false;
             const clickUpPixel = new Pixel(event.x, event.y);
             const boundingBox = Elements.dragCanvas.getBoundingClientRect();
@@ -470,6 +481,8 @@ function setUpCanvasEvents(state: State) {
             state.canvasClickUp = new Pixel(Math.floor(clickUpPixel.x - boundingBox.left), Math.floor(clickUpPixel.y - boundingBox.top));
 
             console.log(`canvasEnd = ${state.canvasClickUp}`);
+
+            Elements.fractalCanvas.style.zIndex = "2"; // move fractal canvas back infront of drag canvas
         }
     });
 
