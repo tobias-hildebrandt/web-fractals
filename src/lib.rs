@@ -8,6 +8,7 @@ use wasm_bindgen::prelude::*;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+#[allow(unused_macros)]
 macro_rules! log {
     ( $( $t:tt )* ) => {
         web_sys::console::log_1(&format!( $( $t )* ).into())
@@ -17,7 +18,7 @@ macro_rules! log {
 #[wasm_bindgen]
 pub fn init() {
     set_panic_hook();
-    log!("wasm init");
+    // log!("wasm init");
 }
 
 fn set_panic_hook() {
@@ -124,13 +125,7 @@ pub struct MandlebrotArgs {
 #[wasm_bindgen(inspectable)]
 impl MandlebrotArgs {
     #[wasm_bindgen(constructor)]
-    pub fn new(
-        start: Complex,
-        end: Complex,
-        width: u32,
-        height: u32,
-        max_iterations: u32,
-    ) -> Self {
+    pub fn new(start: Complex, end: Complex, width: u32, height: u32, max_iterations: u32) -> Self {
         return MandlebrotArgs {
             start,
             end,
@@ -152,13 +147,13 @@ impl MandlebrotArgs {
 // returns lowest number of iterations needed
 #[wasm_bindgen]
 pub fn render_mandlebrot(
-    image_data: js_sys::Uint8ClampedArray,
-    results: js_sys::Int32Array,
+    image_data: &mut [u8],
+    results: &mut [i32],
     args: MandlebrotArgs,
-    start_index: u32,
-    amount: u32,
+    start_index: usize,
+    amount: usize,
 ) -> Option<u32> {
-    let mut count: u32 = 0;
+    let mut count: usize = 0;
     let mut pixel: Pixel = index_to_pixel(start_index, &args);
     let mut lowest_iterations: Option<u32> = None;
     let mut result: Option<u32>;
@@ -193,16 +188,16 @@ pub fn render_mandlebrot(
                 }
 
                 let signed = unsigned as i32;
-                results.set_index( count, signed);
+                results[count] = signed;
             }
             None => {
-                results.set_index(count, -1i32);
+                results[count] = -1i32;
             }
         }
 
-        draw_pixel(&pixel, result, &args, &image_data, start_index);
+        draw_pixel(&pixel, result, &args, image_data, start_index);
 
-        if count >= amount {
+        if count >= amount - 1 {
             // log!("done after {}, count is {}", pixel, count);
             break;
         } else {
@@ -217,28 +212,28 @@ pub fn render_mandlebrot(
 
 #[wasm_bindgen]
 pub fn second_round(
-    image_data: js_sys::Uint8ClampedArray,
-    results: js_sys::Int32Array,
+    image_data: &mut [u8],
+    results: &mut [i32],
     args: &MandlebrotArgs,
-    start_index: u32,
-    amount: u32,
+    start_index: usize,
+    amount: usize,
     lowest: u32,
 ) {
-    let mut count: u32 = 0;
+    let mut count: usize = 0;
     let mut pixel: Pixel = index_to_pixel(start_index, &args);
 
     loop {
         let result: Option<u32>;
-        let current = results.get_index(count);
+        let current = results[count];
 
         // normalize for lowest
         if current > 0 && lowest > 0 {
             let current_u = current as u32;
             result = Some(current_u - lowest + 1);
-            draw_pixel(&pixel, result, &args, &image_data, start_index);
+            draw_pixel(&pixel, result, &args, image_data, start_index);
         }
-        
-        if count >= amount {
+
+        if count >= amount - 1 {
             // log!("done after {}, count is {}", pixel, count);
             break;
         } else {
@@ -253,13 +248,14 @@ fn draw_pixel(
     pixel: &Pixel,
     iters_opt: Option<u32>,
     args: &MandlebrotArgs,
-    arr: &js_sys::Uint8ClampedArray,
-    start_index: u32
+    arr: &mut [u8],
+    start_index: usize,
 ) {
-    let index = ((args.width * pixel.y) + pixel.x - start_index) * 4;
+    let index: usize = ((args.width * pixel.y) as usize + pixel.x as usize - start_index) * 4;
     let (r, g, b): (u8, u8, u8);
     if let Some(iters) = iters_opt {
-        let color = (f64::log2(iters as f64 * 1.2f64) / f64::log2(args.max_iterations as f64) * 255.0)
+        let color = (f64::log2(iters as f64 * 1.2f64) / f64::log2(args.max_iterations as f64)
+            * 255.0)
             .clamp(0f64, 255f64) as u8;
         // let color = ((iters as f64 / args.max_iterations as f64) * 255f64).clamp(0f64, 255f64) as u8;
         r = color / 2u8;
@@ -271,10 +267,10 @@ fn draw_pixel(
         b = 255u8;
     }
 
-    arr.set_index(index, r);
-    arr.set_index(index + 1, g);
-    arr.set_index(index + 2, b);
-    arr.set_index(index + 3, 255u8); // alpha 100%
+    arr[index] = r;
+    arr[index + 1]  = g;
+    arr[index + 2] = b;
+    arr[index + 3] = 255u8; // alpha 100%
 }
 
 fn pixel_to_complex(pixel: &Pixel, args: &MandlebrotArgs) -> Complex {
@@ -287,8 +283,8 @@ fn pixel_to_complex(pixel: &Pixel, args: &MandlebrotArgs) -> Complex {
     return Complex { real, imag };
 }
 
-fn index_to_pixel(index: u32, args: &MandlebrotArgs) -> Pixel {
-    let x = index % args.width;
-    let y = index / args.width;
+fn index_to_pixel(index: usize, args: &MandlebrotArgs) -> Pixel {
+    let x = index as u32 % args.width;
+    let y = index as u32 / args.width;
     return Pixel { x, y };
 }

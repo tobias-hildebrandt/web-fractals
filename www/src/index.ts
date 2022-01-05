@@ -165,7 +165,7 @@ function useWasmAllPixels(state: State) {
     }
 
     state.activeInputs = newInputs;
-    state.results = new Int32Array(newInputs.height * newInputs.width);
+    state.results = new Int32Array(newInputs.height * newInputs.width); // located by JS
     state.startTime = performance.now();
     state.currentPass = 1;
     state.lowestIter = null;
@@ -179,7 +179,7 @@ function useWasmAllPixels(state: State) {
     console.log(`total pixels: ${totalPixels}, imageData size: ~${totalPixels * 4 / 1000000}MB`)
     // each worker should have at least 25000 pixels
     // and there should be at most 50 workers
-    state.pixelsPerBatch = Math.max(totalPixels / 20, 25000); 
+    state.pixelsPerBatch = Math.max(totalPixels / 20, 25000);
     state.workersActive = totalPixels / state.pixelsPerBatch;
 
     updateStatusText(state);
@@ -239,6 +239,8 @@ function workerOnMessage(message: MessageEvent, state: State) {
     const response = message.data as unknown as common.ResponseMessage;
     const startingPixel = state.pixelsPerBatch * response.idNumber;
 
+    const workerImageData = response.imageData;
+
     // only on 1st pass
     if (response.pass == 1) {
         const firstPassResponse = response as common.FirstPassResponseMessage;
@@ -260,7 +262,7 @@ function workerOnMessage(message: MessageEvent, state: State) {
 
     // on all passes, copy worker pixels
     for (let j = 0; j < state.pixelsPerBatch * 4; j++) {
-        imageData.data[startingPixel * 4 + j] = response.imageData[j];
+        imageData.data[startingPixel * 4 + j] = workerImageData[j];
         // if (j % pixelsPerBatch == 0) {
         //     console.log(`on byte ${j} of worker ${workerId}, value is ${response.imageData[j]}`);
         // }
@@ -269,6 +271,7 @@ function workerOnMessage(message: MessageEvent, state: State) {
     // draw the incomplete image
     CanvasHelper.draw(Elements.fractalCanvas, imageData);
 
+    // single-threaded, so don't need to worry about race conditions (i think?)
     state.workersDone += 1;
 
     updateStatusText(state);
@@ -285,10 +288,19 @@ function workerOnMessage(message: MessageEvent, state: State) {
 
             console.log(`done with first pass, switching to second`);
             console.log(`min = ${state.lowestIter}`);
+
+            // set state before sending out messages
+            state.workersDone = 0;
+            state.currentPass = 2;
+            
+            // prepare and send out messages to start second pass
             for (let j = 0; j < state.workersActive; j++) {
                 const worker: Worker = state.workers[j];
+
+                // located in JS memory
                 const tempImage: Uint8ClampedArray = new Uint8ClampedArray(state.pixelsPerBatch * 4);
                 const tempResults: Int32Array = new Int32Array(state.pixelsPerBatch);
+
                 const secondRoundStartingPixel = j * state.pixelsPerBatch;
 
                 // copy results
@@ -309,14 +321,11 @@ function workerOnMessage(message: MessageEvent, state: State) {
                     min: state.lowestIter,
                     imageData: tempImage,
                     results: tempResults,
-                }
+                };
 
                 // second pass, pass references to arrays
                 worker.postMessage(message, [tempImage.buffer, tempResults.buffer]);
             }
-
-            state.workersDone = 0;
-            state.currentPass = 2;
 
             updateStatusText(state);
 
@@ -336,18 +345,14 @@ function workerOnMessage(message: MessageEvent, state: State) {
             Elements.startButton.disabled = false;
             CanvasHelper.draw(Elements.fractalCanvas, imageData);
 
-            // for (let j = 0; j < totalWorkers; j++) {
-            //     const worker: Worker = state.workers[j];
-            //     worker.terminate();
-            // }
-
             state.results = null;
             state.startTime = null;
-            // state.workers = [];
             state.currentPass = 0;
             state.lowestIter = null;
             state.workersDone = 0;
             state.alreadyRenderedOnce = true;
+
+            // don't terminate workers, since they take a while to spin up
         } else {
             console.log(`main thread received message with unrecognized pass value of ${response.pass}`);
         }
