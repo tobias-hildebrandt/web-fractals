@@ -34,8 +34,8 @@ export class Inputs {
         public keepRatio: boolean) { }
 }
 
-export function inputsToArgs(inputs: Inputs): fractals.MandlebrotArgs {
-    return new fractals.MandlebrotArgs(
+export function inputsToArgs(inputs: Inputs): fractals.MandelbrotArgs {
+    return new fractals.MandelbrotArgs(
         new fractals.Complex(inputs.start.real, inputs.start.imag),
         new fractals.Complex(inputs.end.real, inputs.end.imag),
         inputs.width,

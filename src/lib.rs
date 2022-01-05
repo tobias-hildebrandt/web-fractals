@@ -27,8 +27,8 @@ fn set_panic_hook() {
 }
 
 #[wasm_bindgen]
-pub fn mandlebrot(real: f64, imaginary: f64, max_iterations: u32) -> JsValue {
-    let m = check_in_mandlebrot(real, imaginary, max_iterations);
+pub fn mandelbrot(real: f64, imaginary: f64, max_iterations: u32) -> JsValue {
+    let m = check_in_mandelbrot(real, imaginary, max_iterations);
     match m {
         Some(iter) => return JsValue::from_f64(iter.into()),
         None => return JsValue::NULL,
@@ -87,9 +87,9 @@ impl Display for Complex {
     }
 }
 
-// if the number is in the mandlebrot set, returns None
+// if the number is in the mandelbrot set, returns None
 // else, returns how many iterations it took for the cycle to leave the set
-pub fn check_in_mandlebrot(real: f64, imaginary: f64, max_iterations: u32) -> Option<u32> {
+pub fn check_in_mandelbrot(real: f64, imaginary: f64, max_iterations: u32) -> Option<u32> {
     let mut x: f64 = 0f64;
     let mut y: f64 = 0f64;
     let mut x_sq: f64 = 0f64;
@@ -113,7 +113,7 @@ pub fn check_in_mandlebrot(real: f64, imaginary: f64, max_iterations: u32) -> Op
 
 #[derive(Clone)]
 #[wasm_bindgen(inspectable)] // does inspectable even do anything
-pub struct MandlebrotArgs {
+pub struct MandelbrotArgs {
     pub start: Complex,
     pub end: Complex,
     pub width: u32,
@@ -123,10 +123,10 @@ pub struct MandlebrotArgs {
 }
 
 #[wasm_bindgen(inspectable)]
-impl MandlebrotArgs {
+impl MandelbrotArgs {
     #[wasm_bindgen(constructor)]
     pub fn new(start: Complex, end: Complex, width: u32, height: u32, max_iterations: u32) -> Self {
-        return MandlebrotArgs {
+        return MandelbrotArgs {
             start,
             end,
             width,
@@ -137,7 +137,7 @@ impl MandlebrotArgs {
 }
 
 #[wasm_bindgen(inspectable)]
-impl MandlebrotArgs {
+impl MandelbrotArgs {
     #[wasm_bindgen(method)]
     pub fn cloned(&self) -> Self {
         return self.clone();
@@ -146,10 +146,10 @@ impl MandlebrotArgs {
 
 // returns lowest number of iterations needed
 #[wasm_bindgen]
-pub fn render_mandlebrot(
+pub fn render_mandelbrot(
     image_data: &mut [u8],
     results: &mut [i32],
-    args: MandlebrotArgs,
+    args: MandelbrotArgs,
     start_index: usize,
     amount: usize,
 ) -> Option<u32> {
@@ -173,7 +173,7 @@ pub fn render_mandlebrot(
     loop {
         let complex = pixel_to_complex(&pixel, &args);
 
-        result = check_in_mandlebrot(complex.real, complex.imag, args.max_iterations);
+        result = check_in_mandelbrot(complex.real, complex.imag, args.max_iterations);
 
         match result {
             Some(unsigned) => {
@@ -214,7 +214,7 @@ pub fn render_mandlebrot(
 pub fn second_round(
     image_data: &mut [u8],
     results: &mut [i32],
-    args: &MandlebrotArgs,
+    args: &MandelbrotArgs,
     start_index: usize,
     amount: usize,
     lowest: u32,
@@ -247,7 +247,7 @@ pub fn second_round(
 fn draw_pixel(
     pixel: &Pixel,
     iters_opt: Option<u32>,
-    args: &MandlebrotArgs,
+    args: &MandelbrotArgs,
     arr: &mut [u8],
     start_index: usize,
 ) {
@@ -273,7 +273,7 @@ fn draw_pixel(
     arr[index + 3] = 255u8; // alpha 100%
 }
 
-fn pixel_to_complex(pixel: &Pixel, args: &MandlebrotArgs) -> Complex {
+fn pixel_to_complex(pixel: &Pixel, args: &MandelbrotArgs) -> Complex {
     let real = ((pixel.x as f64 / args.width as f64) * (args.end.real - args.start.real))
         + args.start.real;
 
@@ -283,7 +283,7 @@ fn pixel_to_complex(pixel: &Pixel, args: &MandlebrotArgs) -> Complex {
     return Complex { real, imag };
 }
 
-fn index_to_pixel(index: usize, args: &MandlebrotArgs) -> Pixel {
+fn index_to_pixel(index: usize, args: &MandelbrotArgs) -> Pixel {
     let x = index as u32 % args.width;
     let y = index as u32 / args.width;
     return Pixel { x, y };

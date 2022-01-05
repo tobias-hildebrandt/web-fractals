@@ -25,7 +25,7 @@ onmessage = async (message) => {
         const results: Int32Array = new Int32Array(request.pixelsPerBatch);
 
         // passed via reference (&mut [u8]) to wasm, no copying is done
-        const min = fractals.render_mandlebrot(imageData, results, args, request.idNumber * request.pixelsPerBatch, request.pixelsPerBatch);
+        const min = fractals.render_mandelbrot(imageData, results, args, request.idNumber * request.pixelsPerBatch, request.pixelsPerBatch);
 
         const message: common.FirstPassResponseMessage = {
             results: results,

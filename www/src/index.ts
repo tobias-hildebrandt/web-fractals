@@ -147,7 +147,7 @@ function complexToString(complex: Complex) {
     return `(${complex.real} + ${complex.imag}i)`;
 }
 
-function argsToString(args: fractals.MandlebrotArgs) {
+function argsToString(args: fractals.MandelbrotArgs) {
     return `start: ${args.start} end: ${args.end} size: ${args.width} x ${args.height}, maxIterations: ${args.maxIterations}`;
 }
 
@@ -180,7 +180,7 @@ function useWasmAllPixels(state: State) {
     // each worker should have at least 25000 pixels
     // and there should be at most 50 workers
     state.pixelsPerBatch = Math.max(totalPixels / 20, 25000);
-    state.workersActive = totalPixels / state.pixelsPerBatch;
+    state.workersActive = Math.ceil(totalPixels / state.pixelsPerBatch);
 
     updateStatusText(state);
 
@@ -415,30 +415,6 @@ function setUpFormEvents(state: State) {
             Elements.startButton.click();
         }
     });
-
-    document.getElementById("save")!.onclick = function () {
-        const image = Elements.fractalCanvas.toDataURL();
-
-        window.open(image, "_blank");
-
-        // const date = new Date();
-        // date.setMilliseconds(0);
-
-        // let timeStr = date.toISOString();
-        // timeStr = timeStr.slice(0, -5);
-        // timeStr = timeStr.replace(/:/g, "-");
-
-        // console.log(`timeStr: ${timeStr}`);
-
-        // const tempAnchor = document.createElement('a');
-        // tempAnchor.download = `mandlebrot-${timeStr}.png`;
-        // tempAnchor.href = image;
-
-        // // temporarily add it, trigger it, then delete it
-        // document.body.appendChild(tempAnchor);
-        // tempAnchor.click();
-        // document.body.removeChild(tempAnchor);
-    };
 }
 
 function setUpCanvasEvents(state: State) {
@@ -516,7 +492,7 @@ function setUpCanvasEvents(state: State) {
             } else {
                 const newHeight = Math.abs(Math.floor(newInputs.width * ((newY - state.canvasClickDown.y) / (newX - state.canvasClickDown.x))));
 
-                (document.getElementById("canvas-height") as HTMLInputElement).valueAsNumber = newHeight;
+                (document.getElementById("canvas-height") as HTMLInputElement).valueAsNumber = Math.floor(newHeight);
             }
 
 
