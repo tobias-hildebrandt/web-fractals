@@ -2,7 +2,7 @@
 
 use std::assert_matches::assert_matches;
 
-use fractals::check_in_mandelbrot;
+use wasm_fractals::check_in_mandelbrot;
 
 const MAX_ITERATIONS: u32 = 100000u32;
 

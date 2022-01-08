@@ -1,4 +1,4 @@
-import * as fractals from "fractals";
+import * as fractals from "wasm-fractals";
 
 export interface RequestMessage {
     idNumber: number,

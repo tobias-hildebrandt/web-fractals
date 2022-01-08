@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 
-import * as fractals from "fractals";
-import { Complex, Pixel } from "fractals";
+import * as fractals from "wasm-fractals";
+import { Complex, Pixel } from "wasm-fractals";
 import * as common from "./common";
 import { Inputs } from "./common";
 

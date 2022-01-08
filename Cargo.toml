@@ -1,8 +1,9 @@
 [package]
-name = "fractals"
+name = "wasm-fractals"
 version = "0.1.0"
 authors = ["Tobias Hildebrandt <tobiash@tobiash.dev>"]
 edition = "2021"
+license = "AGPL-3.0-or-later"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
@@ -13,8 +14,8 @@ default = ["console_error_panic_hook"]
 [dependencies]
 wasm-bindgen = "0.2.78"
 wasm-bindgen-futures = "0.4.28"
-js-sys = "^0.3"
-web-sys = { version = "^0.3", features = ["Window", "Document", "Element", "HtmlCanvasElement", "CanvasRenderingContext2d", "console"]}
+#js-sys = "^0.3"
+web-sys = { version = "^0.3", features = ["console"]}
 console_error_panic_hook = { version = "0.1.6", optional = true }
 wee_alloc = { version = "0.4.5", optional = true }
 
