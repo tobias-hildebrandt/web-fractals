@@ -9,17 +9,20 @@ The main goal of this project is to learn about the Rust/WebAssembly ecosystem, 
 
 ## Technologies Used
 
-- [Typescript](https://www.typescriptlang.org/) (with [Babel](https://babeljs.io/) and [Webpack 5](https://webpack.js.org/)), employing [Web Workers](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) to enable multi-threading
+- [Typescript](https://www.typescriptlang.org/) (with [Babel](https://babeljs.io/) and [Webpack 5](https://webpack.js.org/))
+- [Web Workers](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) to enable multi-threading
 - [Rust](https://www.rust-lang.org/)/[WebAssembly](https://webassembly.org/) via [`wasm-pack`](https://rustwasm.github.io/) for Mandelbrot calculations and canvas rendering
 
 ## Interesting Code
 
-- `render_mandelbrot` (and `draw_pixel`) in `src/lib.rs`:
-  - ` render_mandelbrot` is a function that is exposed to the JavaScript engine via WebAssembly
+- in `src/lib.rs` (Rust):
+  - `check_in_mandelbrot()` is a WASM function
+    - calculates how many iterations it takes for a complex number to cycle out of the Mandelbrot set (bounded by a specified maximum number of iterations)
+  - ` render_mandelbrot()` is exposed to the JavaScript engine via WebAssembly
     - in Rust, this is done via the `#[wasm_bindgen]` attribute macro
     - for the `image_data` parameter, accepts a `&mut [u8]` in Rust which is a `Uint8Array` in JavaScript
-  - `draw_pixel` directly writes raw canvas image data
-- `worker.ts`
+  - `draw_pixel()` directly writes raw canvas image data
+- `worker.ts` (TypeScript)
   - a [Web Worker](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API) script
   - since the Mandelbrot equation is [embarrassingly parallelizable](https://en.wikipedia.org/wiki/Embarrassingly_parallel), using multiple threads will help out the performance tremendously
   - data is transferred from worker to main thread through `postMessage`
@@ -31,7 +34,7 @@ This code is mostly just a simple learning exercise. It likely does not follow a
 
 ## Contributing
 
-Hate the UI? Find something I did incorrectly? Hate my code style? Send me a message or pull request!
+Hate the UI? Find something I did incorrectly? Disappointed in my code style? Send me a message or pull request!
 
 ## Setup
 - Clone this Git repository (`git clone https://github.com/tobias-hildebrandt/web-fractals.git`)

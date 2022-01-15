@@ -27,7 +27,7 @@ fn set_panic_hook() {
 }
 
 #[wasm_bindgen]
-pub fn mandelbrot(real: f64, imaginary: f64, max_iterations: u32) -> JsValue {
+pub fn single_mandelbrot(real: f64, imaginary: f64, max_iterations: u32) -> JsValue {
     let m = check_in_mandelbrot(real, imaginary, max_iterations);
     match m {
         Some(iter) => return JsValue::from_f64(iter.into()),
