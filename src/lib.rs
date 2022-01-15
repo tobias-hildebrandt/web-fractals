@@ -148,7 +148,7 @@ impl MandelbrotArgs {
 #[wasm_bindgen]
 pub fn render_mandelbrot(
     image_data: &mut [u8],
-    results: &mut [i32],
+    results: &mut [u32],
     args: MandelbrotArgs,
     start_index: usize,
     amount: usize,
@@ -176,22 +176,20 @@ pub fn render_mandelbrot(
         result = check_in_mandelbrot(complex.real, complex.imag, args.max_iterations);
 
         match result {
-            Some(unsigned) => {
-                if lowest_iterations == None {
-                    lowest_iterations = Some(unsigned);
-                }
+            Some(iters) => {
+                results[count] = iters;
 
+                // set lowest if needed
                 if let Some(current_low) = lowest_iterations {
-                    if unsigned < current_low {
-                        lowest_iterations = Some(unsigned);
+                    if iters < current_low {
+                        lowest_iterations = Some(iters);
                     }
+                } else {
+                    lowest_iterations = Some(iters);
                 }
-
-                let signed = unsigned as i32;
-                results[count] = signed;
             }
             None => {
-                results[count] = -1i32;
+                results[count] = 0;
             }
         }
 
@@ -213,7 +211,7 @@ pub fn render_mandelbrot(
 #[wasm_bindgen]
 pub fn second_round(
     image_data: &mut [u8],
-    results: &mut [i32],
+    results: &mut [u32],
     args: &MandelbrotArgs,
     start_index: usize,
     amount: usize,
@@ -228,7 +226,7 @@ pub fn second_round(
 
         // normalize for lowest
         if current > 0 && lowest > 0 {
-            let current_u = current as u32;
+            let current_u = current;
             result = Some(current_u - lowest + 1);
             draw_pixel(&pixel, result, &args, image_data, start_index);
         }
@@ -268,7 +266,7 @@ fn draw_pixel(
     }
 
     arr[index] = r;
-    arr[index + 1]  = g;
+    arr[index + 1] = g;
     arr[index + 2] = b;
     arr[index + 3] = 255u8; // alpha 100%
 }

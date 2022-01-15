@@ -10,7 +10,7 @@ export interface RequestMessage {
 export interface SecondPassRequestMessage extends RequestMessage {
     min: number,
     imageData: Uint8ClampedArray,
-    results: Int32Array,
+    results: Uint32Array,
 }
 
 export interface ResponseMessage {
@@ -20,7 +20,7 @@ export interface ResponseMessage {
 }
 
 export interface FirstPassResponseMessage extends ResponseMessage {
-    results: Int32Array,
+    results: Uint32Array,
     min: number
 }
 

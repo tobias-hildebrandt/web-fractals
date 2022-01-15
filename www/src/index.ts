@@ -245,7 +245,10 @@ function workerOnMessage(message: MessageEvent, state: State) {
     if (response.pass == 1) {
         const firstPassResponse = response as common.FirstPassResponseMessage;
 
-        const workerResults: Int32Array = firstPassResponse.results;
+        
+        const workerResults: Uint32Array = firstPassResponse.results;
+
+        console.log(`worker ${response.idNumber} results: min:${Math.min(...workerResults)} max:${Math.max(...workerResults)}`);
 
         // copy worker results
         for (let j = 0; j < state.pixelsPerBatch; j++) {
@@ -281,7 +284,7 @@ function workerOnMessage(message: MessageEvent, state: State) {
 
         if (response.pass == 1) {
             // finished first pass
-            if (!state.lowestIter) {
+            if (state.lowestIter === null) {
                 console.log(`error starting second pass! state.lowestIter = ${state.lowestIter}`);
                 return;
             }
@@ -299,7 +302,7 @@ function workerOnMessage(message: MessageEvent, state: State) {
 
                 // located in JS memory
                 const tempImage: Uint8ClampedArray = new Uint8ClampedArray(state.pixelsPerBatch * 4);
-                const tempResults: Int32Array = new Int32Array(state.pixelsPerBatch);
+                const tempResults: Uint32Array = new Uint32Array(state.pixelsPerBatch);
 
                 const secondRoundStartingPixel = j * state.pixelsPerBatch;
 

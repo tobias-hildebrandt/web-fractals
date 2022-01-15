@@ -22,7 +22,7 @@ onmessage = async (message) => {
     if (request.pass == 1) {
         // arrays are located in JS memory
         const imageData: Uint8Array = new Uint8Array(request.pixelsPerBatch * 4);
-        const results: Int32Array = new Int32Array(request.pixelsPerBatch);
+        const results: Uint32Array = new Uint32Array(request.pixelsPerBatch);
 
         // passed via reference (&mut [u8]) to wasm, no copying is done
         const min = fractals.render_mandelbrot(imageData, results, args, request.idNumber * request.pixelsPerBatch, request.pixelsPerBatch);
