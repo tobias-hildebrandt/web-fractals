@@ -4,6 +4,7 @@ import * as fractals from "wasm-fractals";
 import { Complex, Pixel } from "wasm-fractals";
 import * as common from "./common";
 import { Inputs } from "./common";
+import * as reactUi from "./react_ui";
 
 // class containing readonly references to important DOM elements
 class Elements {
@@ -546,5 +547,7 @@ function setUpCanvasEvents(state: State) {
         }
     });
 }
+
+reactUi.startReact();
 
 main();

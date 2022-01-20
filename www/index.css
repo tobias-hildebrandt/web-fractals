@@ -31,7 +31,7 @@ body {
     /* top: 0; */
 }
 
-input {
+#inputs input {
     max-width: 50px;
     margin-right: 25px;
 }
