@@ -3,6 +3,8 @@
 
 Render an image of the Mandelbrot set in your web browser using WebAssembly.
 
+![mandelbrot image](www/mandlebrot.png)
+
 ## Project Motivation
 
 The main goal of this project is to learn about the Rust/WebAssembly ecosystem, multi-threaded web development, and the interaction between the two. A secondary goal is to render beautiful mathematical images.
